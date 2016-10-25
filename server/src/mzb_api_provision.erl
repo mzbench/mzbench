@@ -208,7 +208,19 @@ download_file(User, Host, FromFile, ToFile, Logger) ->
             _ = mzb_subprocess:exec_format("scp -o StrictHostKeyChecking=no ~s~s:~s ~s",
                 [UserNameParam, [Host], FromFile, TmpFile], [stderr_to_stdout], Logger),
             Logger(info, "[ MV ] ~s -> ~s", [TmpFile, ToFile]),
-            ok = file:rename(TmpFile, ToFile)
+            case file:rename(TmpFile, ToFile) of
+                ok -> ok;
+                { error, Reason } ->
+                    if Reason =:= exdev ->
+                        Logger(info, "[ MV ] Start copy ~s -> ~s", [TmpFile, ToFile]),
+                        { ok , _ } = file:copy(TmpFile, ToFile),
+                        Logger(info, "[ MV ] Delete ~s ", [ TmpFile ]),
+                        file:delete(TmpFile);
+                       true ->
+                        Logger(error, "Can't rename file ~s to file ~s with reason ~p", [ TmpFile, ToFile, Reason ]),
+                        error({ cant_rename, Reason })
+                    end
+            end
     end,
     ok.
 
