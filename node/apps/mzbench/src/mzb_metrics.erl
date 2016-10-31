@@ -114,7 +114,7 @@ init([Env, Nodes]) ->
         }}.
 
 handle_call({declare_metrics, Groups}, _From, #s{metric_groups = OldGroups} = State) ->
-    try mzb_script_metrics:normalize(OldGroups ++ Groups) of
+    try mzb_script_metrics:normalize(Groups ++ OldGroups) of
         NewGroups ->
             mzb_metric_reporter:new_metrics(NewGroups),
             NewCounters = [N || {N, counter, _} <- extract_metrics(NewGroups)] -- [N || {N, counter, _} <- extract_metrics(OldGroups)],
@@ -225,8 +225,9 @@ evaluate_derived_metrics(#s{metric_groups = MetricGroups} = State) ->
     NewState = eval_rps(State),
 
     DerivedMetrics = lists:filter(fun is_derived_metric/1, extract_metrics(MetricGroups)),
-    lists:foreach(fun ({Name, derived, #{resolver:= Resolver, worker:= {Provider, Worker}}}) ->
-        try Provider:apply(Resolver, [], Worker) of
+    lists:foreach(fun ({Name, derived, #{resolver:= Resolver, worker:= {Provider, Worker}} = Opts}) ->
+        Args = mzb_bc:maps_get(resolver_args, Opts, []),
+        try Provider:apply(Resolver, Args, Worker) of
             Val -> global_set(Name, gauge, Val)
         catch
             _:Reason -> system_log:error("Failed to evaluate derived metrics:~nWorker: ~p~nFunction: ~p~nReason: ~p~nStacktrace: ~p~n", [Worker, Resolver, Reason, erlang:get_stacktrace()])

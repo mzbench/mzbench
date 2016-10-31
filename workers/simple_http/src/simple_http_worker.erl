@@ -1,7 +1,7 @@
 -module(simple_http_worker).
 
 -export([initial_state/0, metrics/0,
-         get/3, get/4]).
+         get/3, get/4, random_get/3]).
 
 -type state() :: term().
 -type meta() :: [{Key :: atom(), Value :: any()}].
@@ -29,8 +29,12 @@ get(State, _Meta, URL) ->
 -spec get(state(), meta(), string(), [{atom(), term()}]) -> {nil, state()}.
 get(State, _Meta, URL, Options) ->
     StartTime = os:timestamp(),
-    HackneyOptions = parse_options(Options),
-    Response = hackney:request(get, list_to_binary(URL), [], <<"">>, HackneyOptions),
+    ShouldLog = proplists:get_value(log, Options, false),
+
+    ShouldLog andalso lager:info("GET ~s", [URL]),
+
+    {HackneyOptions, Headers} = parse_options(Options),
+    Response = hackney:request(get, list_to_binary(URL), Headers, <<"">>, HackneyOptions),
 
     case Response of
         {ok, _, _, BodyRef} -> hackney:skip_body(BodyRef);
@@ -52,8 +56,25 @@ get(State, _Meta, URL, Options) ->
     end,
     {nil, State}.
 
-parse_options(Options) -> parse_options(Options, []).
-parse_options([], Acc) -> lists:reverse(Acc);
-parse_options([{basic_auth, {Name, Pass}}|T], Acc) ->
-    parse_options(T, [{basic_auth, {list_to_binary(Name), list_to_binary(Pass)}}|Acc]).
+random_get(State, Meta, List) ->
+    {URL, Options} = weighted_choose(List),
+    get(State, Meta, URL, Options).
+
+weighted_choose(List) ->
+    Sum = lists:sum([W || {_, W} <- List]),
+    R = random:uniform(Sum),
+    choose(R, List).
+
+choose(R, [{E, W}|_]) when R =< W -> E;
+choose(R, [{_, W}|T]) -> choose(R - W, T).
+
+parse_options(Options) -> parse_options(Options, [], []).
+parse_options([], OptionsAcc, HeadersAcc) -> {lists:reverse(OptionsAcc), lists:reverse(HeadersAcc)};
+parse_options([{header, Header}|T], OAcc, HAcc) ->
+    [N, V] = string:tokens(Header, ":"),
+    parse_options(T, OAcc, [{list_to_binary(N), list_to_binary(V)}|HAcc]);
+parse_options([{basic_auth, {Name, Pass}}|T], OAcc, HAcc) ->
+    parse_options(T, [{basic_auth, {list_to_binary(Name), list_to_binary(Pass)}}|OAcc], HAcc);
+parse_options([_|T], OAcc, HAcc) ->
+    parse_options(T, OAcc, HAcc).
 
