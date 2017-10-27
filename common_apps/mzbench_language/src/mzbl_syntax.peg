@@ -20,17 +20,39 @@ pargs <- __ head:value tail:(__ ',' __ value)* __
     [Head|Rest]
 `;
 pair <- __ key:(id / string) __ '=' __ value:value __ `{call, t, [proplists:get_value(key, Node), proplists:get_value(value, Node)], Idx}`;
-value <- unumber / logic_op / single / list / id / number / string ~;
-logic_op <- (number / string) __ ('<=' / '>=' / '<' / '>' / '==') __ (number / string)
+value <- unumber / logic_exp / single / list / id / number / string ~;
+logic_exp <- logic_priority / logic_unary / logic_plain ~;
+logic_priority <- '(' __ head:logic_exp ')' tail:(__ logic_binary __ logic_exp )*
+`
+    lists:foldl(fun(Logic, E) -> {call, lists:nth(2, Logic), [E, lists:nth(4, Logic)], Idx} end,
+      proplists:get_value(head, Node), proplists:get_value(tail, Node))
+`;
+logic_plain <- head:logic_op tail:(__ logic_binary __ logic_exp )*
+`
+    lists:foldl(fun(Logic, E) -> {call, lists:nth(2, Logic), [E, lists:nth(4, Logic)], Idx} end,
+      proplists:get_value(head, Node), proplists:get_value(tail, Node))
+`;
+logic_binary <- 'and' / 'or'
+`
+case Node of
+  <<"and">> -> 'and';
+  <<"or">> -> 'or'
+end
+`;
+logic_unary <- 'not' __ logic_exp `{call, 'not', [lists:nth(3, Node)], Idx}`;
+logic_op <- (single / number / string) __ ('<=' / '>=' / '<' / '>' / '==' / '!=' / '/=' / '<>') __ (single / number / string)
 `{call, case lists:nth(3, Node) of
   <<"<=">> -> lte;
   <<">=">> -> gte;
   <<"<">> -> lt;
   <<">">> -> gt;
+  <<"!=">> -> ne;
+  <<"/=">> -> ne;
+  <<"<>">> -> ne;
   <<"==">> -> eq
 end, [lists:nth(1, Node), lists:nth(5, Node)], Idx}`;
 
-list <- '[' pargs ']' `lists:nth(2, Node)`;
+list <- '[' pargs? ']' `lists:nth(2, Node)`;
 number <- int frac? mult?
 `
 case Node of
@@ -39,18 +61,19 @@ case Node of
   _ -> list_to_float(binary_to_list(iolist_to_binary(Node)))
 end * case lists:nth(3, Node) of
   [] -> 1;
-  ['K'] -> 1000;
-  ['M'] -> 1000000;
-  ['G'] -> 1000000000
+  <<"K">> -> 1000;
+  <<"M">> -> 1000000;
+  <<"G">> -> 1000000000;
+  <<"T">> -> 1000000000000
 end
 `;
 unumber <- (number / single) __ ('b' / 'kb' / 'mb' / 'gb' / 'tb' / 'ms' / 'sec' / 'min' / 'h' / 'rpm' / 'rph' / 'rps') `{value, lists:nth(1, Node), binary_to_atom(lists:nth(3, Node), latin1), Idx}`;
 frac <- '.' digit+ ~;
 int <- '-'? (non_zero_digit digit+) / digit ~;
-mult <- ('K' / 'M' / 'G') ~;
+mult <- ('K' / 'M' / 'G' / 'T') ~;
 non_zero_digit <- [1-9] ~;
 digit <- [0-9] ~;
-string <- '"' chars:(!'"' ("\\\\" / '\\"' / .))* '"' `binary_to_list(iolist_to_binary(proplists:get_value(chars, Node)))`;
+string <- '"' chars:(!'"' ("\\\\" / '\\"' / .))* '"' `mzb_string:unescape_ascii(binary_to_list(iolist_to_binary(proplists:get_value(chars, Node))))`;
 id <- [a-z] [a-z0-9_]* `binary_to_atom(iolist_to_binary(Node), latin1)`;
 __ <-  ((&'#' [^\n]* '\n') / ([ \t\n\s\r]+))* ~;
 indent <- '_INDENT_' ~;

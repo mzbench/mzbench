@@ -6,6 +6,7 @@ import MZBenchRouter from '../utils/MZBenchRouter';
 import MZBenchActions from '../actions/MZBenchActions';
 import Autosuggest from 'react-autosuggest';
 import Misc from '../utils/Misc';
+import PropTypes from 'prop-types';
 
 class SimpleSuggestion {
     getTagSuggestions(value) {
@@ -50,12 +51,16 @@ class SimpleSuggestion {
 class DashboardEdit extends React.Component {
     constructor(props) {
             super(props);
+            this._onUp = this._onUp.bind(this);
+            this._onDown = this._onDown.bind(this);
+            this._onDelete = this._onDelete.bind(this);
             this._onChangeName = this._onChangeName.bind(this);
             this._onChangeCriteria = this._onChangeCriteria.bind(this);
             this._onChangeMetricFun = this._onChangeMetricFun.bind(this);
             this._onChangeXEnvFun = this._onChangeXEnvFun.bind(this);
             this._onChangeGroupEnvFun = this._onChangeGroupEnvFun.bind(this);
             this._onChangeKind = this._onChangeKind.bind(this);
+            this._onChangeXAxis = this._onChangeXAxis.bind(this);
             this._onChangeDescription = this._onChangeDescription.bind(this);
             this._onTagSuggestionsUpdateRequested = this._onTagSuggestionsUpdateRequested.bind(this);
             this._onMetricSuggestionsUpdateRequested = this._onMetricSuggestionsUpdateRequested.bind(this);
@@ -129,42 +134,45 @@ class DashboardEdit extends React.Component {
             className: "form-control",
             type: "text"
         };
-    }    
+    }
 
     renderChart(chart, idx) {
-        const inputProps = this.suggestionProps('Type metric name', chart.metric, this._onChangeMetricFun(idx));
-        const inputXProps = this.suggestionProps('Type env name', chart.x_env, this._onChangeXEnvFun(idx));
-        const inputGroupProps = this.suggestionProps('Type env name', chart.group_env, this._onChangeGroupEnvFun(idx));
+        const inputProps = this.suggestionProps('Type metric name', chart.metric, this._onChangeMetricFun(chart.id));
+        const inputXProps = this.suggestionProps('Type env name', chart.x_env, this._onChangeXEnvFun(chart.id));
+        const inputGroupProps = this.suggestionProps('Type env name', chart.group_env, this._onChangeGroupEnvFun(chart.id));
 
         const kind = Misc.ucfirst(chart.kind) + " " + chart.size;
 
-        return  (<div className="dashboard-config-row" key={idx}>
+        return  (<div className="dashboard-config-row" key={chart.id}>
                     <div className="row">
                       <div className="form-group col-md-6">
-                        <label>Metric name for Y, chart #{idx+1}</label>
+                        <label>Metric name for Y</label>
                         <Autosuggest suggestions={this.state.metric_suggestions[idx]}
                            getSuggestionValue={this._suggestion.getSuggestionValue}
-                           onSuggestionsUpdateRequested={this._onMetricSuggestionsUpdateRequested(idx)}
+                           onSuggestionsUpdateRequested={this._onMetricSuggestionsUpdateRequested(chart.id)}
                            renderSuggestion={this._suggestion.renderSuggestion}
                            inputProps={inputProps} />
                       </div>
                       <div className="form-group col-md-3">
                         <label>Kind</label>
-                        <select onChange={this._onChangeKind} rel={idx} defaultValue={kind} className="form-control">
+                        <select onChange={this._onChangeKind} rel={chart.id} defaultValue={kind} className="form-control">
                             <option value="Compare 5">Compare 5</option>
                             <option value="Compare 10">Compare 10</option>
                             <option value="Regression 0">Regression</option>
-                            <option value="Group 5">Group 5</option>
-                            <option value="Group 10">Group 10</option>
+                            <option value="Group 5">Group 5 (XY chart)</option>
+                            <option value="Group 10">Group 10 (XY chart)</option>
                         </select>
+                      </div>
+                      <div className="form-group col-md-3">
+                            <button type="button" className="btn btn-danger" rel={chart.id} onClick={this._onDelete}><span className="glyphicon glyphicon-remove"></span></button>
                       </div>
                     </div>
                     <div className="row">
                       <div className="form-group col-md-6">
-                        <label>{(chart.kind == "compare") ? "Env var for caption" : "Env var for groups"}</label>
+                        <label>{(chart.kind == "compare") ? "Env var for caption (optional)" : "Env var for groups (optional)"}</label>
                         <Autosuggest suggestions={this.state.group_suggestions[idx]}
                            getSuggestionValue={this._suggestion.getSuggestionValue}
-                           onSuggestionsUpdateRequested={this._onGroupSuggestionsUpdateRequested(idx)}
+                           onSuggestionsUpdateRequested={this._onGroupSuggestionsUpdateRequested(chart.id)}
                            renderSuggestion={this._suggestion.renderSuggestion}
                            inputProps={inputGroupProps} />
                       </div>
@@ -173,15 +181,26 @@ class DashboardEdit extends React.Component {
                                 <label>Env var for X-axis</label>
                                 <Autosuggest suggestions={this.state.x_suggestions[idx]}
                                    getSuggestionValue={this._suggestion.getSuggestionValue}
-                                   onSuggestionsUpdateRequested={this._onXSuggestionsUpdateRequested(idx)}
+                                   onSuggestionsUpdateRequested={this._onXSuggestionsUpdateRequested(chart.id)}
                                    renderSuggestion={this._suggestion.renderSuggestion}
                                    inputProps={inputXProps} />
-                              </div>) : null }
+                              </div>) : (chart.kind == "regression" ?
+                              (<div className="col-md-3"><label>X-axis</label>
+                              <select onChange={this._onChangeXAxis} rel={chart.id} defaultValue={chart.regression_x} className="form-control">
+                                  <option value="Number">Number</option>
+                                  <option value="Time">Time</option>
+                              </select></div>)
+                              : (<div className="col-md-3"></div>)) }
+                      <div className="form-group col-md-3">
+                            {idx > 0 ? (<button type="button" className="btn btn-info" rel={chart.id} onClick={this._onUp}><span className="glyphicon glyphicon-arrow-up"></span></button>) : null}
+                            {idx > 0 ? (<span>&nbsp;</span>) : null}
+                            {idx < (this.props.item.charts.length - 1) ? (<button type="button" className="btn btn-info" rel={chart.id} onClick={this._onDown}><span className="glyphicon glyphicon-arrow-down"></span></button>) : null}
+                      </div>
                     </div>
                     <div className="row">
                         <div className="form-group col-md-9">
                             <label>Description (optional)</label>
-                            <textarea rel={idx} onChange={this._onChangeDescription} className="form-control" rows="2" defaultValue={chart.description}></textarea>
+                            <textarea rel={chart.id} onChange={this._onChangeDescription} className="form-control" rows="2" defaultValue={chart.description}></textarea>
                         </div>
                     </div>
                 </div>);
@@ -191,7 +210,8 @@ class DashboardEdit extends React.Component {
           suggestions: this._suggestion.getTagSuggestions(value)
         });
     }
-    _onMetricSuggestionsUpdateRequested(idx) {
+    _onMetricSuggestionsUpdateRequested(id) {
+        let idx = this._getIdx(id);
         return ({ value }) => {
             this.state.metric_suggestions[idx] =
                 this._suggestion.getSuggestions(value,
@@ -199,14 +219,16 @@ class DashboardEdit extends React.Component {
             this.setState(this.state);
         }
     }
-    _onXSuggestionsUpdateRequested(idx) {
+    _onXSuggestionsUpdateRequested(id) {
+        let idx = this._getIdx(id);
         return ({ value }) => {
             this.state.x_suggestions[idx] =
                 this._suggestion.getSuggestions(value, this.state.envs);
             this.setState(this.state);
         }
     }
-    _onGroupSuggestionsUpdateRequested(idx) {
+    _onGroupSuggestionsUpdateRequested(id) {
+        let idx = this._getIdx(id);
         return ({ value }) => {
             this.state.group_suggestions[idx] =
                 this._suggestion.getSuggestions(value, this.state.envs);
@@ -228,31 +250,51 @@ class DashboardEdit extends React.Component {
         event.preventDefault();
         MZBenchActions.addChartToSelectedDashboard();
     }
+    _onUp(event) {
+        let idx = this._getIdx(parseInt($(event.target).closest('button').attr("rel")));
+        MZBenchActions.withSelectedDashboard((d) => {d.charts.splice(idx,0,d.charts.splice(idx-1,1)[0]);});
+    }
+    _onDown(event) {
+        let idx = this._getIdx(parseInt($(event.target).closest('button').attr("rel"))) + 1;
+        MZBenchActions.withSelectedDashboard((d) => {d.charts.splice(idx,0,d.charts.splice(idx-1,1)[0]);});
+    }
+    _onDelete(event) {
+        let idx = this._getIdx(parseInt($(event.target).closest('button').attr("rel")));
+        MZBenchActions.withSelectedDashboard((d) => {d.charts.splice(idx, 1)});
+    }
     _onChangeDescription(event) {
-        let idx = parseInt($(event.target).attr("rel"));
+        let idx = this._getIdx(parseInt($(event.target).attr("rel")));
         MZBenchActions.withSelectedDashboard((d) => {d.charts[idx].description = event.target.value});
     }
-    _onChangeMetricFun(idx) {
+    _onChangeMetricFun(id) {
+        let idx = this._getIdx(id);
         return (event, {newValue}) => {
             MZBenchActions.withSelectedDashboard((d) => {d.charts[idx].metric = newValue;});
         }
     }
-    _onChangeXEnvFun(idx) {
+    _onChangeXEnvFun(id) {
+        let idx = this._getIdx(id);
         return (event, {newValue}) => {
             MZBenchActions.withSelectedDashboard((d) => {d.charts[idx].x_env = newValue;});
         }
     }
-    _onChangeGroupEnvFun(idx) {
+    _onChangeGroupEnvFun(id) {
+        let idx = this._getIdx(id);
         return (event, {newValue}) => {
             MZBenchActions.withSelectedDashboard((d) => {d.charts[idx].group_env = newValue;});
         }
     }
     _onChangeKind(event) {
-        let idx = parseInt($(event.target).attr("rel"));
+        let idx = this._getIdx(parseInt($(event.target).attr("rel")));
         let parts = event.target.value.split(" ");
         let kind = parts[0].toLowerCase();
         let size = parts[1] ? parts[1] : "0";
         MZBenchActions.withSelectedDashboard((d) => {d.charts[idx].kind = kind; d.charts[idx].size = size;});
+    }
+    _onChangeXAxis(event) {
+        let idx = this._getIdx(parseInt($(event.target).attr("rel")));
+        let newValue = event.target.value;
+        MZBenchActions.withSelectedDashboard((d) => {d.charts[idx].regression_x = newValue;});
     }
     _onChangeCriteria(event, {newValue}) {
         MZBenchActions.withSelectedDashboard((d) => {d.criteria = newValue});
@@ -268,9 +310,12 @@ class DashboardEdit extends React.Component {
         MZBenchActions.saveSelectedDashboard();
         MZBenchRouter.navigate("/dashboard", {});
     }
+    _getIdx(id) {
+        return this.props.item.charts.reduce((a, x, idx) => x.id === id ? idx : a, -1);
+    }
     _resolveState() {
         this.state.total = (this.props.item.criteria == BenchStore.getTimelineId()) ? BenchStore.getTotal() : -1;
-        let benches = BenchStore.getItems().filter((b) => b.isRunning() ? 0 : 1);
+        let benches = BenchStore.getItems().filter((b) => b.status === "complete" ? 1 : 0);
         this.state.metrics = Misc.uniq_fast(benches.reduce((acc_b, b) => {
             let groups = b.metrics.groups || [];
             return acc_b.concat(groups.reduce((acc_g, g) => {
@@ -278,8 +323,8 @@ class DashboardEdit extends React.Component {
             }, []));
         }, []));
         this.state.envs = Misc.uniq_fast(benches.reduce((acc_b, b) => {
-            let env = b.env || {};
-            return acc_b.concat(Object.keys(env));
+            let env = b.env || [];
+            return acc_b.concat(env.map((x) => x.name));
         }, []));
         this.state.results = Misc.uniq_fast(benches.reduce((acc_b, b) => {
             let results = b.results || {};
@@ -313,9 +358,9 @@ class DashboardEdit extends React.Component {
 };
 
 DashboardEdit.propTypes = {
-    item: React.PropTypes.object,
-    updateInterval: React.PropTypes.number,
-    benchLimit: React.PropTypes.number
+    item: PropTypes.object,
+    updateInterval: PropTypes.number,
+    benchLimit: PropTypes.number
 };
 
 DashboardEdit.defaultProps = {

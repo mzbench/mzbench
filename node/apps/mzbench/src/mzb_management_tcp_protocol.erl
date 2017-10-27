@@ -62,13 +62,12 @@ handle_message(get_results, ReplyFun) ->
 handle_message({read_and_validate, Path, Env}, _) ->
     {reply, mzb_bench_sup:read_and_validate(Path, Env)};
 
-handle_message({connect_nodes, Hosts}, ReplyFun) ->
-    {ok, Port} = application:get_env(mzbench, node_interconnect_port),
+handle_message({connect_nodes, HostsAndPorts}, ReplyFun) ->
     try
-        mzb_interconnect:set_director([{Host, Port} || Host <- Hosts]),
+        mzb_interconnect:set_director(HostsAndPorts),
         fun Wait (0) -> ReplyFun({error, timeout});
             Wait (N) ->
-                case (length(mzb_interconnect:nodes()) == length(Hosts)) of
+                case (length(mzb_interconnect:nodes()) == length(HostsAndPorts)) of
                     true  -> ReplyFun(ok);
                     false ->
                         timer:sleep(_Timeout = 2000),
@@ -84,6 +83,9 @@ handle_message({connect_nodes, Hosts}, ReplyFun) ->
 
 handle_message({change_env, Env}, _) ->
     {reply, mzb_director:change_env(Env)};
+
+handle_message({run_command, Pool, Percent, Command}, _) ->
+    {reply, mzb_director:run_command(Pool, Percent, Command)};
 
 handle_message({get_log_port, Node}, _) ->
     case mzb_interconnect:call(Node, get_system_log_port) of
@@ -156,8 +158,7 @@ handle_call({new_metrics, Metrics}, _From, State = #state{}) ->
     {reply, ok, State};
 
 handle_call({report, [Name, Value]}, _From, State = #state{}) ->
-    Metric = io_lib:format("~B\t~p~n", [unix_time(), Value]),
-    send_message({metric_value, Name, Metric}, State),
+    send_message({metric_value, Name, unix_time(), Value}, State),
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->

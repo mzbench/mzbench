@@ -27,14 +27,14 @@ def start_mzbench_server(custom_data_location=None):
         node_location_param = '{{node_git, "{0}"}},'.format(os.environ['MZBENCH_REPO'])
     else:
         node_location_param = ''
-    
+
     if custom_data_location:
         custom_data_location_param = '{{bench_data_dir, "{0}"}},'.format(custom_data_location)
     else:
         custom_data_location_param = ''
 
     with open(dirname + "/test_server.config", "w") as config:
-        config.write('[{{mzbench_api, [{0} {1} {{node_log_port, 0}}, {{node_log_user_port, 0}}, {{node_management_port, 0}}]}}].'
+        config.write('[{{mzbench_api, [{0} {1} {{node_log_port, 0}}, {{node_log_user_port, 0}}, {{node_management_port, 0}}, {{node_interconnect_port, 0}}]}}].'
                      .format(node_location_param, custom_data_location_param))
 
     with open('{0}/test_server.config'.format(dirname), 'r') as f:
@@ -59,31 +59,29 @@ def start_mzbench_server(custom_data_location=None):
     finally:
         cmd('{0} stop_server'.format(mzbench_script))
 
-def run_successful_bench(name, nodes=None, workers_per_node=None, env={}, 
-        email=None, exclusive_node_usage=False, expected_log_message_regex=None,
+def run_successful_bench(name, nodes=None, workers_per_node=None, env={},
+        email=None, expected_log_message_regex=None,
         check_log_function=None, check_user_log_function=None, post_start=None):
     return run_bench(name, should_fail=False,
         nodes=nodes, workers_per_node=workers_per_node, env=env, email=email,
-        exclusive_node_usage=exclusive_node_usage,
         expected_log_message_regex=expected_log_message_regex,
         check_log_function=check_log_function,
         check_user_log_function=check_user_log_function, post_start=post_start)
 
 
-def run_failing_bench(name, nodes=None, workers_per_node=None, env={}, 
-        email=None, exclusive_node_usage=False, expected_log_message_regex=None,
+def run_failing_bench(name, nodes=None, workers_per_node=None, env={},
+        email=None, expected_log_message_regex=None,
         check_log_function=None, check_user_log_function=None, post_start=None):
     return run_bench(name, should_fail=True,
         nodes=nodes, workers_per_node=workers_per_node, env=env,
-        exclusive_node_usage=exclusive_node_usage,
         expected_log_message_regex=expected_log_message_regex,
         check_log_function=check_log_function,
         check_user_log_function=check_user_log_function, post_start=post_start)
 
 
-def run_bench(name=None, worker_package_with_default_scenario=None, nodes=None, 
+def run_bench(name=None, worker_package_with_default_scenario=None, nodes=None,
         workers_per_node=None, env={}, email=None, should_fail=False, max_retries=2,
-        exclusive_node_usage=False, expected_log_message_regex=None,
+        expected_log_message_regex=None,
         check_log_function=None, check_user_log_function=None, post_start=None):
 
     email_option = ('--email=' + email) if email else ''
@@ -107,7 +105,6 @@ def run_bench(name=None, worker_package_with_default_scenario=None, nodes=None,
 
         flags = ' '.join([
             '--host=localhost:4800',
-            '--exclusive_node_usage=' + ('true' if exclusive_node_usage else 'false'),
             node_commit_arg,
             nodes_option,
             env_option,
@@ -115,8 +112,6 @@ def run_bench(name=None, worker_package_with_default_scenario=None, nodes=None,
 
         if name is not None:
             invocation = mzbench_dir + 'bin/mzbench ' + flags + ' start ' + name
-        elif worker_package_with_default_scenario is not None:
-            invocation = mzbench_dir + 'bin/mzbench ' + flags + ' start_default_scenario_of_worker ' + worker_package_with_default_scenario
         else:
             raise RuntimeError('Neither script filename nor default scenario package provided.')
 
@@ -177,7 +172,7 @@ def run_bench(name=None, worker_package_with_default_scenario=None, nodes=None,
 
             if check_log_function:
                 maybe_error = check_log_function(log)
-                
+
                 if maybe_error:
                     print
                     print "Log doesn't pass custom check:\n{0}\n\n".format(maybe_error)
@@ -189,7 +184,7 @@ def run_bench(name=None, worker_package_with_default_scenario=None, nodes=None,
                 log = cmd(log_cmd)
 
                 maybe_error = check_user_log_function(log)
-                
+
                 if maybe_error:
                     print
                     print "Log doesn't pass custom check:\n{0}\n\n".format(maybe_error)
@@ -229,6 +224,22 @@ def restart_bench(bench_id):
         print 'mzbench restart returned invalid json:\nOutput: {0}\nStderr: {1}'.format(restart_out, restart_err)
         raise
 
+def start_simple_bench(name, additional):
+    restart = subprocess.Popen(
+        [mzbench_dir + 'bin/mzbench',
+            '--host=localhost:4800',
+            'start',
+            name, additional],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
+    restart_out, restart_err = restart.communicate()
+
+    try:
+        return json.loads(restart_out)['id']
+    except Exception:
+        print 'mzbench restart returned invalid json:\nOutput: {0}\nStderr: {1}'.format(restart_out, restart_err)
+        raise
+
 def wait_status(bench_id, status, n):
     if n <= 0:
         print 'ERROR: Wait for status "running" has timed out!'
@@ -256,5 +267,3 @@ def wait_status(bench_id, status, n):
     else:
         time.sleep(5)
         return wait_status(bench_id, status, n - 1)
-
-

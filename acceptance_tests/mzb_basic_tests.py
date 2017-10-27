@@ -96,10 +96,16 @@ def vars_defaults_test():
 
 
 def poisson_worker_start_test():
-    run_successful_bench(mzbench_dir + 'examples/worker_start_poisson.erl',
-        expected_log_message_regex='workers\.pool1\.started\.rps = 1\.')
-    run_successful_bench(mzbench_dir + 'examples.bdl/worker_start_poisson.bdl',
-        expected_log_message_regex='workers\.pool1\.started\.rps = 1\.')
+    bench_id = run_successful_bench(mzbench_dir + 'examples.bdl/worker_start_poisson.bdl')
+
+    output = subprocess.check_output(
+        [mzbench_script,
+            '--host=localhost:4800',
+            '--format=csv',
+            'data',
+            str(bench_id)])
+
+    assert re.compile('workers\.pool1\.started\.rps,.*,1\.', re.UNICODE).search(output)
 
 
 def unicode_resources_test():
@@ -230,6 +236,9 @@ def assertions_succ_test():
     run_successful_bench(mzbench_dir + 'examples.bdl/assertions.bdl', env={})
 
 
+def loop_assert_test():
+    run_successful_bench(scripts_bdl_dir + 'loop_while.bdl', env={})
+
 def ignore_failure_test():
     run_successful_bench(scripts_dir + 'ignore_failure_test.erl')
     run_successful_bench(scripts_bdl_dir + 'ignore_failure_test.bdl')
@@ -263,6 +272,29 @@ def log_compression_test():
     bench_id = run_successful_bench(scripts_dir + 'correct_script.erl')
     log_cmd = 'curl --head -X GET http://localhost:4800/log?id={0}'.format(bench_id)
     assert("content-encoding: deflate" in cmd(log_cmd))
+
+
+def run_command_test():
+
+    def run_command(bid):
+        print "Running command for {0}".format(bid)
+        change_env_process = subprocess.Popen(
+            [mzbench_script,
+                '--host=localhost:4800',
+                'run_command',
+                str(bid),
+                'print("zzzzzz999")'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+        change_env_res, change_env_err = change_env_process.communicate()
+        print 'Running command for {0}\n{1}'.format(change_env_res, change_env_err)
+
+    run_successful_bench(
+                scripts_dir + 'loop_with_vars.erl',
+                post_start=run_command,
+                expected_log_message_regex=r'zzzzzz999',
+                env={'time': '60', 'rate': '1', 'message':'abc'})
+
 
 def env_change_test():
 

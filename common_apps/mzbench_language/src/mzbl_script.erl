@@ -3,19 +3,21 @@
 -export([parse/1,
          hostname/1,
          add_indents/1,
+         convert/2,
          get_real_script_name/1,
          read/1,
          read_from_string/1,
          get_benchname/1,
          meta_to_location_string/1,
          normalize_env/1,
-         extract_pools_and_env/2,
+         extract_info/2,
          extract_install_specs/2,
          enumerate_pools/1,
          extract_worker/1,
          resolve_worker_provider/1,
          make_git_install_spec/4,
          make_rsync_install_spec/3,
+         get_loop_assert_metrics/1,
          eval_opts/2]).
 
 -include("mzbl_types.hrl").
@@ -40,18 +42,22 @@ get_real_script_name(Env) ->
 -spec meta_to_location_string(meta()) -> string().
 meta_to_location_string(Meta) ->
     case proplists:get_value(line, Meta) of
+        undefined -> "unknown line";
+        LineNumber -> "line " ++ integer_to_list(LineNumber)
+    end ++
+    case proplists:get_value(column, Meta) of
         undefined -> "";
-        LineNumber -> "line " ++ integer_to_list(LineNumber) ++ ": "
-    end.
+        ColumnNumber -> ", column " ++ integer_to_list(ColumnNumber)
+    end ++ ": ".
 
 -spec read_from_string(string()) -> abstract_expr().
 read_from_string(String) ->
     try
         mzbl_literals:convert(parse(String))
     catch
-        C:{parse_error, {_, Module, ErrorInfo}} = E ->
+        C:{parse_error, {_, _, ErrorInfo}} = E ->
             ST = erlang:get_stacktrace(),
-            lager:error("Parsing script file failed: ~s", [Module:format_error(ErrorInfo)]),
+            lager:error("Parsing script file failed: ~s", [erl_parse:format_error(ErrorInfo)]),
             erlang:raise(C,E,ST);
         C:E ->
             ST = erlang:get_stacktrace(),
@@ -154,61 +160,70 @@ eat_brackets([$[ | Brackets], [ $] | Rest], none) -> eat_brackets(Brackets, Rest
 eat_brackets(_, [Br | _], none) when (Br == $)) or (Br == $]) -> erlang:error({parse_error, "Wrong bracketing"});
 eat_brackets(Brackets, [_ | Rest], Mode) -> eat_brackets(Brackets, Rest, Mode).
 
--spec extract_pools_and_env([script_expr()], [{Key::term(), Value::term()}]) ->
-    {[#operation{}], [proplists:property()]}.
-extract_pools_and_env(Script, Env) ->
-    Env2 = lists:foldl(
-            fun (#operation{name = include_resource, args = [NameExpr, PathExpr]}, Acc) ->
+-spec get_loop_assert_metrics([script_expr()]) -> [string()].
+get_loop_assert_metrics(Script) ->
+    {_, Metrics} = mzbl_ast:mapfold(
+        fun (#operation{name = while, args = [#operation{args = A}]} = Op, Acc) ->
+                {Op, lists:filter(fun is_list/1, A) ++ Acc};
+            (Op, Acc) -> {Op, Acc}
+        end, [], Script),
+    Metrics.
+
+-spec extract_info([script_expr()], [{Key::term(), Value::term()}]) ->
+    {[#operation{}], [proplists:property()], [proplists:property()]}.
+extract_info(Script, Env) ->
+    {Env2, Asserts} = lists:foldl(
+            fun (#operation{name = include_resource, args = [NameExpr, PathExpr]}, {Acc, Ass}) ->
                     Name = mzbl_interpreter:eval_std(NameExpr, Env),
                     Path = mzbl_interpreter:eval_std(PathExpr, Env),
-                    [{{resource, Name}, import_resource(Env, Path, erlang)} | Acc];
-                (#operation{name = include_resource, args = [NameExpr, PathExpr, Type]}, Acc) ->
+                    {[{{resource, Name}, import_resource(Env, Path, erlang)} | Acc], Ass};
+                (#operation{name = include_resource, args = [NameExpr, PathExpr, Type]}, {Acc, Ass}) ->
                     Name = mzbl_interpreter:eval_std(NameExpr, Env),
                     Path = mzbl_interpreter:eval_std(PathExpr, Env),
-                    [{{resource, Name}, import_resource(Env, Path, Type)} | Acc];
-                (#operation{name = defaults, args = [DefaultsList]}, Acc) ->
-                    interpret_defaults(DefaultsList, Env) ++ Acc;
-                (#operation{name = assert, args = [Time, Expr]}, Acc) ->
-                    {value, {_, Asserts}, Acc2} = lists:keytake(asserts, 1, Acc),
-                    [{asserts, [{Time, normalize_assert(Expr)}|Asserts]}|Acc2];
+                    {[{{resource, Name}, import_resource(Env, Path, Type)} | Acc], Ass};
+                (#operation{name = defaults, args = [DefaultsList]}, {Acc, Ass}) ->
+                    {interpret_defaults(DefaultsList, Env) ++ Acc, Ass};
+                (#operation{name = assert, args = [TimeExpr, Expr]}, {Acc, Ass}) ->
+                    Time = mzbl_literals:convert(mzbl_interpreter:eval_std(TimeExpr, Env)),
+                    {Acc, [{Time, Expr} | Ass]};
                 (_, Acc) -> Acc
-            end, [{asserts, []}|Env], Script),
+            end, {Env, []}, Script),
 
     Script2 = lists:filter(fun (#operation{name = pool}) -> true; (_) -> false end, enumerate_pools(Script)),
     Script3 = mzbl_ast:map_meta(fun (Meta, Op) -> [{function, Op}|Meta] end, Script2),
-    {Script3, Env2}.
-
-normalize_assert(#operation{name = Op, args = [Op1, Op2]} = A) when is_list(Op2) ->
-    A#operation{name = opposite_op(Op), args = [Op2, Op1]};
-normalize_assert(#operation{args = [_, _]} = A) ->
-    A.
-
-opposite_op(gt) -> lt;
-opposite_op(lt) -> gt;
-opposite_op(gte) -> lte;
-opposite_op(lte) -> gte.
+    {Script3, Env2, Asserts}.
 
 import_resource(Env, File, Type) ->
-    {ok, Content} = case re:run(File, "^https?://", [{capture, first}, caseless]) of
-        {match, _} ->
-            {ok, Result} = httpc:request(File),
-            {_, _, Body} = Result,
-            {ok, Body};
-        nomatch ->
-            Root = proplists:get_value("bench_script_dir", Env),
-            WorkerDirs = proplists:get_value("bench_workers_dir", Env),
-            try
-                file:read_file(filename:join(Root, File))
-            catch
-                error:{read_file_error, _, enoent} = E ->
-                    Masks = [filename:join([D, "*", "resources", File]) || D <- WorkerDirs],
-                    case lists:append([mzb_file:wildcard(M) || M <- Masks])  of
-                        [] -> erlang:error(E);
-                        [Path|_] -> file:read_file(Path)
-                    end
-            end
-    end,
-    convert(Content, Type).
+    try
+        Content = case re:run(File, "^https?://", [{capture, first}, caseless]) of
+            {match, _} ->
+                {ok, Result} = httpc:request(File),
+                {_, _, Body} = Result,
+                Body;
+            nomatch ->
+                Root = proplists:get_value("bench_script_dir", Env),
+                WorkerDirs = proplists:get_value("bench_workers_dir", Env),
+                case file:read_file(filename:join(Root, File)) of
+                    {ok, D} -> D;
+                    {error, enoent} ->
+                        Masks = [filename:join([D, "*", "resources", File]) || D <- WorkerDirs],
+                        case lists:append([mzb_file:wildcard(M) || M <- Masks])  of
+                            [] -> erlang:error(enoent);
+                            [Path|_] ->
+                                lager:error("Trying ~p...", [Path]),
+                                case file:read_file(Path) of
+                                    {ok, D} -> D;
+                                    {error, R} -> erlang:error(R)
+                                end
+                        end
+                end
+        end,
+        convert(Content, Type)
+    catch
+        _:Reason ->
+            lager:error("Resource ~p(~p) import error: ~p", [File, Type, Reason]),
+            erlang:error({import_resource_error, File, Type, Reason})
+    end.
 
 -spec interpret_defaults([{string(), script_expr()}], [{term(), term()}]) -> [{term(), term()}].
 interpret_defaults(DefaultsList, Env) ->
@@ -226,7 +241,10 @@ interpret_defaults(DefaultsList, Env) ->
              (string() | binary(), binary) -> binary();
              (string() | binary(), text) -> string();
              (string() | binary(), json) -> list() | map();
-             (string() | binary(), tsv) -> [string()].
+             (string() | binary(), lines) -> [string()];
+             (string() | binary(), tsv) -> [binary()].
+convert(X, lines) when is_binary(X) -> convert(binary_to_list(X), lines);
+convert(X, lines) when is_list(X) ->  string:tokens(X, "\n");
 convert(X, binary) when is_binary(X) -> X;
 convert(X, binary) -> list_to_binary(X);
 convert(X, text) when is_binary(X) -> binary_to_list(X);
@@ -250,9 +268,12 @@ convert(X, T) -> erlang:error({invalid_conversion, T, X}).
 
 -spec enumerate_pools([script_expr()]) -> [script_expr()].
 enumerate_pools(Pools) ->
+    PoolsNum = lists:sum(lists:map(fun (#operation{name = pool}) -> 1; (_) -> 0 end, Pools)),
     {Pools2, _} = lists:mapfoldl(
         fun (#operation{name = pool} = Op, Number) ->
-                {mzbl_ast:add_meta(Op, [{pool_name, "pool" ++ integer_to_list(Number)}]), Number + 1};
+                {mzbl_ast:add_meta(Op, [{pools_num, PoolsNum},
+                                        {pool_name, "pool" ++ integer_to_list(Number)},
+                                        {pool_id, Number}]), Number + 1};
             (Op, Number) ->
                 {Op, Number}
         end, 1, Pools),
@@ -291,9 +312,11 @@ hostname(Node) ->
 
 -spec extract_install_specs(abstract_expr(), [term()]) -> [install_spec()].
 extract_install_specs(AST, Env) ->
+    [Defaults] = mzbl_ast:find_operation_and_extract_args(defaults, AST, [[]]),
+    Env2 = Env ++ interpret_defaults(Defaults, Env),
     Convert =
         fun(#operation{args = [Expr]}) ->
-            Args = eval_opts(Expr, Env),
+            Args = eval_opts(Expr, Env2),
             case mzbl_ast:find_operation_and_extract_args(git, Args, undefined) of
                 undefined ->
                     case mzbl_ast:find_operation_and_extract_args(rsync, Args, undefined) of

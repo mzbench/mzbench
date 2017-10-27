@@ -4,9 +4,8 @@ import BenchStore from '../stores/BenchStore';
 import Graph from './Graph.react';
 import MZBenchActions from '../actions/MZBenchActions';
 import Misc from '../utils/Misc';
-import Collapsible from 'react-collapsible';
 import moment from 'moment';
-
+import PropTypes from 'prop-types';
 
 class DashboardOverview extends React.Component {
     constructor(props) {
@@ -16,8 +15,12 @@ class DashboardOverview extends React.Component {
     }
 
     componentDidMount() {
-        MZBenchActions.getBenchset({criteria:this.props.item.criteria,
+        MZBenchActions.subscribeBenchset({criteria:this.props.item.criteria,
             charts: this.props.item.charts, benchset_id: this.benchsetId});
+    }
+
+    componentWillUnmount() {
+        MZBenchActions.unsubscribeBenchset(this.benchsetId);
     }
 
     render() {
@@ -83,16 +86,24 @@ class DashboardOverview extends React.Component {
             if (!benches || benches.length == 0) return (<h4 key={idx}>{c.metric} not found</h4>);
 
             let guid = "compare-" + idx;
-            let groupEnv = Misc.ucfirst(c.group_env);
-            let xEnv = Misc.ucfirst(c.x_env);
+            let groupEnv = c.group_env;
+            let xEnv = c.kind === "regression" ? (c.regression_x ? c.regression_x : "Number") : c.x_env;
+            let key = "" + idx + benches.map((b) => b.benches.map((bb) => bb.id)).join("");
 
-            return (<div key={idx}>
+            return (<div key={key}>
                         <p className="dashboard">{c.description}</p>
-                        <Graph targets={targets} kind={c.kind} x_env={c.x_env}
+                        <Graph targets={targets} kind={c.kind} x_env={xEnv}
                             title={c.metric} benchset={benches} domPrefix={guid} height="400"/>
-                        <Collapsible triggerText="Show benches" triggerTextWhenOpen="Hide benches">
-                            {this.renderTable(c.metric, c.kind, groupEnv, xEnv, benches)}
-                        </Collapsible>
+                        <div className="row">
+                            <div className="col-md-12 graph-options-link">
+                                <a href={"#collapseBenches" + guid} className="col-xs-6" data-toggle="collapse" aria-expanded="false" aria-controls={"collapseBenches" + guid}>
+                                    Benches <span className="caret"></span>
+                                </a>
+                                <div className="col-md-12 collapse" id={"collapseBenches" + guid}>
+                                    {this.renderTable(c.metric, c.kind, Misc.ucfirst(groupEnv), Misc.ucfirst(xEnv), benches)}
+                                </div>
+                            </div>
+                        </div>
                     </div>);
         });
     }
@@ -100,7 +111,7 @@ class DashboardOverview extends React.Component {
 };
 
 DashboardOverview.propTypes = {
-    item: React.PropTypes.object.isRequired
+    item: PropTypes.object.isRequired
 };
 
 export default DashboardOverview;

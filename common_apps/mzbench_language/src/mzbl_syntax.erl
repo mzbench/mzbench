@@ -75,21 +75,55 @@ end end).
 
 -spec 'value'(input(), index()) -> parse_result().
 'value'(Input, Index) ->
-  p(Input, Index, 'value', fun(I,D) -> (p_choose([fun 'unumber'/2, fun 'logic_op'/2, fun 'single'/2, fun 'list'/2, fun 'id'/2, fun 'number'/2, fun 'string'/2]))(I,D) end, fun(Node, _Idx) ->Node end).
+  p(Input, Index, 'value', fun(I,D) -> (p_choose([fun 'unumber'/2, fun 'logic_exp'/2, fun 'single'/2, fun 'list'/2, fun 'id'/2, fun 'number'/2, fun 'string'/2]))(I,D) end, fun(Node, _Idx) ->Node end).
+
+-spec 'logic_exp'(input(), index()) -> parse_result().
+'logic_exp'(Input, Index) ->
+  p(Input, Index, 'logic_exp', fun(I,D) -> (p_choose([fun 'logic_priority'/2, fun 'logic_unary'/2, fun 'logic_plain'/2]))(I,D) end, fun(Node, _Idx) ->Node end).
+
+-spec 'logic_priority'(input(), index()) -> parse_result().
+'logic_priority'(Input, Index) ->
+  p(Input, Index, 'logic_priority', fun(I,D) -> (p_seq([p_string(<<"(">>), fun '__'/2, p_label('head', fun 'logic_exp'/2), p_string(<<")">>), p_label('tail', p_zero_or_more(p_seq([fun '__'/2, fun 'logic_binary'/2, fun '__'/2, fun 'logic_exp'/2])))]))(I,D) end, fun(Node, Idx) ->
+    lists:foldl(fun(Logic, E) -> {call, lists:nth(2, Logic), [E, lists:nth(4, Logic)], Idx} end,
+      proplists:get_value(head, Node), proplists:get_value(tail, Node))
+ end).
+
+-spec 'logic_plain'(input(), index()) -> parse_result().
+'logic_plain'(Input, Index) ->
+  p(Input, Index, 'logic_plain', fun(I,D) -> (p_seq([p_label('head', fun 'logic_op'/2), p_label('tail', p_zero_or_more(p_seq([fun '__'/2, fun 'logic_binary'/2, fun '__'/2, fun 'logic_exp'/2])))]))(I,D) end, fun(Node, Idx) ->
+    lists:foldl(fun(Logic, E) -> {call, lists:nth(2, Logic), [E, lists:nth(4, Logic)], Idx} end,
+      proplists:get_value(head, Node), proplists:get_value(tail, Node))
+ end).
+
+-spec 'logic_binary'(input(), index()) -> parse_result().
+'logic_binary'(Input, Index) ->
+  p(Input, Index, 'logic_binary', fun(I,D) -> (p_choose([p_string(<<"and">>), p_string(<<"or">>)]))(I,D) end, fun(Node, _Idx) ->
+case Node of
+  <<"and">> -> 'and';
+  <<"or">> -> 'or'
+end
+ end).
+
+-spec 'logic_unary'(input(), index()) -> parse_result().
+'logic_unary'(Input, Index) ->
+  p(Input, Index, 'logic_unary', fun(I,D) -> (p_seq([p_string(<<"not">>), fun '__'/2, fun 'logic_exp'/2]))(I,D) end, fun(Node, Idx) ->{call, 'not', [lists:nth(3, Node)], Idx} end).
 
 -spec 'logic_op'(input(), index()) -> parse_result().
 'logic_op'(Input, Index) ->
-  p(Input, Index, 'logic_op', fun(I,D) -> (p_seq([p_choose([fun 'number'/2, fun 'string'/2]), fun '__'/2, p_choose([p_string(<<"<=">>), p_string(<<">=">>), p_string(<<"<">>), p_string(<<">">>), p_string(<<"==">>)]), fun '__'/2, p_choose([fun 'number'/2, fun 'string'/2])]))(I,D) end, fun(Node, Idx) ->{call, case lists:nth(3, Node) of
+  p(Input, Index, 'logic_op', fun(I,D) -> (p_seq([p_choose([fun 'single'/2, fun 'number'/2, fun 'string'/2]), fun '__'/2, p_choose([p_string(<<"<=">>), p_string(<<">=">>), p_string(<<"<">>), p_string(<<">">>), p_string(<<"==">>), p_string(<<"!=">>), p_string(<<"\/=">>), p_string(<<"<>">>)]), fun '__'/2, p_choose([fun 'single'/2, fun 'number'/2, fun 'string'/2])]))(I,D) end, fun(Node, Idx) ->{call, case lists:nth(3, Node) of
   <<"<=">> -> lte;
   <<">=">> -> gte;
   <<"<">> -> lt;
   <<">">> -> gt;
+  <<"!=">> -> ne;
+  <<"/=">> -> ne;
+  <<"<>">> -> ne;
   <<"==">> -> eq
 end, [lists:nth(1, Node), lists:nth(5, Node)], Idx} end).
 
 -spec 'list'(input(), index()) -> parse_result().
 'list'(Input, Index) ->
-  p(Input, Index, 'list', fun(I,D) -> (p_seq([p_string(<<"[">>), fun 'pargs'/2, p_string(<<"]">>)]))(I,D) end, fun(Node, _Idx) ->lists:nth(2, Node) end).
+  p(Input, Index, 'list', fun(I,D) -> (p_seq([p_string(<<"[">>), p_optional(fun 'pargs'/2), p_string(<<"]">>)]))(I,D) end, fun(Node, _Idx) ->lists:nth(2, Node) end).
 
 -spec 'number'(input(), index()) -> parse_result().
 'number'(Input, Index) ->
@@ -100,9 +134,10 @@ case Node of
   _ -> list_to_float(binary_to_list(iolist_to_binary(Node)))
 end * case lists:nth(3, Node) of
   [] -> 1;
-  ['K'] -> 1000;
-  ['M'] -> 1000000;
-  ['G'] -> 1000000000
+  <<"K">> -> 1000;
+  <<"M">> -> 1000000;
+  <<"G">> -> 1000000000;
+  <<"T">> -> 1000000000000
 end
  end).
 
@@ -120,7 +155,7 @@ end
 
 -spec 'mult'(input(), index()) -> parse_result().
 'mult'(Input, Index) ->
-  p(Input, Index, 'mult', fun(I,D) -> (p_choose([p_string(<<"K">>), p_string(<<"M">>), p_string(<<"G">>)]))(I,D) end, fun(Node, _Idx) ->Node end).
+  p(Input, Index, 'mult', fun(I,D) -> (p_choose([p_string(<<"K">>), p_string(<<"M">>), p_string(<<"G">>), p_string(<<"T">>)]))(I,D) end, fun(Node, _Idx) ->Node end).
 
 -spec 'non_zero_digit'(input(), index()) -> parse_result().
 'non_zero_digit'(Input, Index) ->
@@ -132,7 +167,7 @@ end
 
 -spec 'string'(input(), index()) -> parse_result().
 'string'(Input, Index) ->
-  p(Input, Index, 'string', fun(I,D) -> (p_seq([p_string(<<"\"">>), p_label('chars', p_zero_or_more(p_seq([p_not(p_string(<<"\"">>)), p_choose([p_string(<<"\\\\">>), p_string(<<"\\\"">>), p_anything()])]))), p_string(<<"\"">>)]))(I,D) end, fun(Node, _Idx) ->binary_to_list(iolist_to_binary(proplists:get_value(chars, Node))) end).
+  p(Input, Index, 'string', fun(I,D) -> (p_seq([p_string(<<"\"">>), p_label('chars', p_zero_or_more(p_seq([p_not(p_string(<<"\"">>)), p_choose([p_string(<<"\\\\">>), p_string(<<"\\\"">>), p_anything()])]))), p_string(<<"\"">>)]))(I,D) end, fun(Node, _Idx) ->mzb_string:unescape_ascii(binary_to_list(iolist_to_binary(proplists:get_value(chars, Node)))) end).
 
 -spec 'id'(input(), index()) -> parse_result().
 'id'(Input, Index) ->

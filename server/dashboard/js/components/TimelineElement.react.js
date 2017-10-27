@@ -6,6 +6,8 @@ import MZBenchActions from '../actions/MZBenchActions';
 import Star from './Star.react';
 import MZBenchRouter from '../utils/MZBenchRouter';
 import GlobalStore from '../stores/GlobalStore';
+import PropTypes from 'prop-types';
+import {OverlayTrigger, Tooltip} from 'react-bootstrap';
 
 class TimelineElement extends React.Component {
     render() {
@@ -57,20 +59,40 @@ class TimelineElement extends React.Component {
                     })}
                 </div>;
 
+        let author = null;
+
+        if (bench.author != "anonymous") {
+            if (bench.author_name == "") {
+                author = (<div>by {bench.author}</div>);
+            } else {
+                author = (<div>by {bench.author_name}</div>);
+            }
+        }
+
+        const searchTooltip = <Tooltip id="search-tooltip">Search for similar benchmarks</Tooltip>;
+
         return (
             <a href={`#/bench/${bench.id}/overview`} className="bs-link">
                 <div className={cssClass}>
                     <h6 className="no-overflow">
-                        #{bench.id} {bench.name}
-                        {bench.isRunning() ? <span className="label">{bench.status}</span> : null}
-                            <Star selected={bench.tags.indexOf("favorites") > -1} onClick={(v) => {
+                        <Star selected={bench.tags.indexOf("favorites") > -1} onClick={(v) => {
                                 if (v == true) MZBenchActions.addBenchTag(bench.id, "favorites");
                                 else MZBenchActions.removeBenchTag(bench.id, "favorites");
                             }}/>
+                        #{bench.id} {bench.name}
+                        {bench.isRunning() ? <span className="label">{bench.status}</span> : null}
+                        <OverlayTrigger delay={200} placement="top" overlay={searchTooltip}>
+                            <span className="search-bench-character glyphicon glyphicon-search" aria-hidden="true"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    MZBenchRouter.navigate("/timeline", {q: bench.name});
+                                }}/>
+                        </OverlayTrigger>
                     </h6>
                     {tags}
+                    <div><i className="glyphicon glyphicon-calendar"></i> <RelativeDate date = {bench.create_time_client} /></div>
                     <div><i className="glyphicon glyphicon-time"></i> {moment.duration(duration).humanize()}</div>
-                    <div><i className="glyphicon glyphicon-calendar"></i> <RelativeDate date = {bench.start_time_client} /></div>
+                    {author}
                 </div>
             </a>
         );
@@ -87,8 +109,8 @@ class TimelineElement extends React.Component {
 }
 
 TimelineElement.propTypes = {
-    bench: React.PropTypes.object.isRequired,
-    isSelected: React.PropTypes.bool
+    bench: PropTypes.object.isRequired,
+    isSelected: PropTypes.bool
 };
 
 TimelineElement.defaultProps = {

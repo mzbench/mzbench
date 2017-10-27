@@ -3,7 +3,9 @@
 -export([init/2,
          terminate/3,
          websocket_handle/3,
-         websocket_info/3]).
+         websocket_info/3,
+         reauth/1,
+         close/2]).
 
 % export for tests
 -export([normalize/1,
@@ -13,15 +15,64 @@
 
 -record(state, {
           ref = undefined :: undefined | reference(),
+          token = undefined :: undefined | binary(),
+          edit_token = undefined :: undefined | binary(),
+          user_info = undefined :: undefined | map(),
           timeline_opts = undefined :: undefined | map(),
           timeline_bounds = {undefined, undefined} :: {undefined | non_neg_integer(), undefined | non_neg_integer()},
           log_streams = #{} :: map(),
           metric_streams = #{} :: map(),
           timeline_items = [] :: [integer()],
           dashboard_items = [] :: [integer()],
+          benchset_id = undefined :: undefined | string(),
+          benchset_query = undefined :: undefined | string(),
+          benchset_charts = [] :: list(),
+          benchset_event = #{} :: map(),
           dashboard_query = undefined :: undefined | map(),
           tags = [] :: [string()]
        }).
+
+%%                   User authentication procedure
+%%                   -----------------------------
+%%
+%%     Dashboard                  Server               Google
+%%        |                         |                     |
+%%        | Establish WS connection |                     |
+%%        | ----------------------> |                     |
+%%        |                    State:=init                |
+%%        |                         |                     |
+%%        |                         |                     |
+%%        |       Auth Req          |                     |
+%%        | <---------------------- |                     |
+%%        |                   State:=req_sent             |
+%%        |                         |                     |
+%%        |               grantOfflineAccess              |
+%%        | --------------------------------------------> |
+%%        |                 one-time-code                 |
+%%        | <-------------------------------------------- |
+%%        |                         |                     |
+%%        |  Google one-time-code   |                     |
+%%        | ----------------------> |                     |
+%%        |                         |                     |
+%%        |                  generate new Ref             |
+%%        |                         |                     |
+%%        |                         |    get tokens       |
+%%        |                         | ------------------> |
+%%        |                         |       tokens        |
+%%        |                         | <------------------ |
+%%        |                         |                     |
+%%        |                 save association              |
+%%        |                    Ref -> Token               |
+%%        |                         |                     |
+%%        |      Authenticated      |                     |
+%%        |    (UserName, UserPic)  |                     |
+%%        | <---------------------- |                     |
+%%        |                 State:=authenticated          |
+%%        |                         |                     |
+%%        |                         |                     |
+%%
+
+
 
 -record(stream_parameters, {
     subsampling_interval = 0 :: non_neg_integer(),
@@ -33,9 +84,25 @@
 }).
 
 init(Req, _Opts) ->
+    lager:info("New WS connection"),
+    Cookies = cowboy_req:parse_cookies(Req),
+    Token = proplists:get_value(mzb_api_auth:cookie_name(), Cookies, undefined),
+
+    case mzb_api_auth:auth_connection_by_ref(self(), Token) of
+        {ok, UserInfo, EditToken} -> {cowboy_websocket, Req, init_connection(UserInfo, Token, EditToken, #state{})};
+        {error, _Reason} -> erlang:error(forbidden)
+    end.
+
+init_connection(UserInfo, Token, EditToken, State) ->
     Ref = erlang:make_ref(),
     ok = gen_event:add_handler(mzb_api_firehose, {mzb_api_firehose, Ref}, [self()]),
-    {cowboy_websocket, Req, #state{ref = Ref}}.
+    State#state{ref = Ref, user_info = UserInfo, token = Token, edit_token = EditToken}.
+
+reauth(Pid) ->
+    Pid ! reauth.
+
+close(Pid, Reason) ->
+    Pid ! {close, Reason}.
 
 terminate(_Reason, _Req, #state{ref = Ref}) ->
     gen_event:delete_handler(mzb_api_firehose, {mzb_api_firehose, Ref}, [self()]),
@@ -59,11 +126,30 @@ websocket_info(Message, Req, State) ->
             JsonReply = jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8]),
             {reply, {text, JsonReply}, Req, NewState};
         {ok, NewState} ->
-            {ok, Req, NewState}
+            {ok, Req, NewState};
+        {stop, NewState} ->
+            {stop, Req, NewState}
     end.
 
-dispatch_info({update_bench, _BenchInfo}, State = #state{timeline_opts = undefined}) ->
+dispatch_info(reauth, State) ->
+    {reply, #{type => "AUTH_TOKEN_EXPIRED"}, State#state{}};
+
+dispatch_info({update_bench, _BenchInfo}, State = #state{timeline_opts = undefined, benchset_id = undefined}) ->
     {ok, State};
+
+% Normally, if you are susbscribed to a benchset, you don't need timeline, that's why
+% this case could overwrite the next one
+dispatch_info({update_bench, BenchInfo = #{id:= Id}}, State = #state{benchset_id = BenchsetId,
+                                                                     benchset_event = LastEvent,
+                                                                     benchset_query = Query,
+                                                                     benchset_charts = Charts}) when BenchsetId /= undefined ->
+    BenchInfos1  = normalize([{Id, BenchInfo}]),
+    BenchInfos2  = apply_filter(Query, BenchInfos1),
+    if length(BenchInfos2) > 0 ->
+        NewEvent = get_benchset(Query, BenchsetId, Charts),
+        if NewEvent /= LastEvent -> {reply, NewEvent, State#state{benchset_event = NewEvent}};
+            true -> {ok, State} end;
+        true -> {ok, State} end;
 
 dispatch_info({update_bench, BenchInfo = #{id:= Id}}, State = #state{
                                                     timeline_items  = TimelineIds,
@@ -171,19 +257,29 @@ dispatch_info({'DOWN', MonRef, process, MonPid, Reason},
 dispatch_info({'DOWN', _, process, _, _}, State) ->
     {ok, State};
 
+dispatch_info({close, Reason}, State) ->
+    lager:info("Closing ~p ws connection because of ~p", [self(), Reason]),
+    {stop, State};
+
 dispatch_info(Info, State) ->
     lager:warning("~p has received unexpected info: ~p", [?MODULE, Info]),
     {ok, State}.
 
+dispatch_request(#{<<"cmd">> := <<"generate-token">>} = Cmd, #state{user_info = UserInfo} = State) ->
+    #{<<"name">> := Name, <<"lifetime">> := LifeTime} = Cmd,
+    NewToken = mzb_api_auth:generate_token(binary_to_list(Name), binary_to_integer(LifeTime), UserInfo),
+    {reply, #{type => "GENERATED_TOKEN", token => NewToken}, State};
+
 dispatch_request(#{<<"cmd">> := <<"ping">>}, State) ->
     {reply, <<"pong">>, State};
 
-dispatch_request(#{<<"cmd">> := <<"get_server_info">>}, State) ->
+dispatch_request(#{<<"cmd">> := <<"get_server_info">>}, State = #state{edit_token = Token}) ->
     Tags = get_all_tags(),
-    Data = #{clouds => mzb_api_cloud:list_clouds(), tags => Tags},
+    {IsFree, KBLeft} = disk_status(),
+    Data = #{clouds => mzb_api_cloud:list_clouds(), disk_is_free => IsFree, disk_left_kb => KBLeft, tags => Tags, token => Token},
     {reply, #{type => "SERVER_INFO", data => Data}, State#state{tags = Tags}};
 
-dispatch_request(#{<<"cmd">> := <<"create_dashboard">>, <<"data">> := Data}, State) ->
+dispatch_request(#{<<"cmd">> := <<"create_dashboard">>, <<"data">> := Data}, State = #state{}) ->
     NewId = dets:foldl(fun ({Id, _}, Acc) -> max(Acc, Id) end, 0, dashboards) + 1,
     dets:insert(dashboards, {NewId, Data}),
     dets:sync(dashboards),
@@ -193,7 +289,7 @@ dispatch_request(#{<<"cmd">> := <<"create_dashboard">>, <<"data">> := Data}, Sta
              },
     {reply, Event, State};
 
-dispatch_request(#{<<"cmd">> := <<"update_dashboard">>, <<"data">> := Data}, State) ->
+dispatch_request(#{<<"cmd">> := <<"update_dashboard">>, <<"data">> := Data}, State = #state{}) ->
     Id = maps:get(<<"id">>, Data),
     dets:insert(dashboards, {Id, maps:remove(<<"id">>, Data)}),
     dets:sync(dashboards),
@@ -204,7 +300,7 @@ dispatch_request(#{<<"cmd">> := <<"update_dashboard">>, <<"data">> := Data}, Sta
              },
     {reply, Event, State};
 
-dispatch_request(#{<<"cmd">> := <<"get_dashboards">>} = Cmd, State) ->
+dispatch_request(#{<<"cmd">> := <<"get_dashboards">>} = Cmd, State = #state{}) ->
     Boards = dets:foldl(fun ({Id, Data}, Acc) -> [maps:put(id, Id, Data)|Acc] end, [], dashboards),
     Sorted = lists:sort(fun (#{id := IdA}, #{id := IdB}) ->
                                 IdA >= IdB
@@ -227,31 +323,23 @@ dispatch_request(#{<<"cmd">> := <<"get_dashboards">>} = Cmd, State) ->
     {reply, Event, State#state{dashboard_items  = TimelineIds,
                                dashboard_query = Cmd}};
 
-dispatch_request(#{<<"cmd">> := <<"get_benchset">>} = Cmd, State) ->
+dispatch_request(#{<<"cmd">> := <<"subscribe_benchset">>} = Cmd, State = #state{}) ->
     Query = mzb_bc:maps_get(<<"criteria">>, Cmd, undefined),
     BenchsetId = mzb_bc:maps_get(<<"benchset_id">>, Cmd, 0),
-    Filter = fun (I) -> apply_filter(Query, normalize([I])) end,
-    {BenchInfos0, Min, _} = mzb_api_server:get_info(Filter, undefined, undefined, undefined, _MaxBenchsetSize = 200),
+    Charts = mzb_bc:maps_get(<<"charts">>, Cmd, []),
+    BenchsetEvent = get_benchset(Query, BenchsetId, Charts),
 
-    Sets = lists:map(fun(Chart) ->
-              Kind = binary_to_list(mzb_bc:maps_get(<<"kind">>, Chart, <<"undefined">>)),
-              Metric = binary_to_list(mzb_bc:maps_get(<<"metric">>, Chart, <<"undefined">>)),
-              Size = list_to_integer(binary_to_list(mzb_bc:maps_get(<<"size">>, Chart, <<"0">>))),
-              GroupEnv = binary_to_list(mzb_bc:maps_get(<<"group_env">>, Chart, <<"undefined">>)),
-              XEnv = binary_to_list(mzb_bc:maps_get(<<"x_env">>, Chart, <<"undefined">>)),
-              benchset(BenchInfos0, Metric, Kind, Size, GroupEnv, XEnv)
-            end, mzb_bc:maps_get(<<"charts">>, Cmd, [])),
+    {reply, BenchsetEvent, State#state{benchset_id = BenchsetId, benchset_query = Query,
+                        benchset_charts = Charts, benchset_event = BenchsetEvent}};
 
-    Event = #{
-               type => "BENCHSET",
-               data => Sets,
-               benchset_id => BenchsetId,
-               next_id => Min
-             },
-    {reply, Event, State};
+dispatch_request(#{<<"cmd">> := <<"unsubscribe_benchset">>} = Cmd, State = #state{benchset_id = CurrentBenchset}) ->
+    BenchsetId = mzb_bc:maps_get(<<"benchset_id">>, Cmd, 0),
+    if BenchsetId == CurrentBenchset -> {ok, State#state{benchset_id = undefined,
+        benchset_event = #{}, benchset_charts = [], benchset_query = undefined}};
+        true -> {ok, State}
+    end;
 
-
-dispatch_request(#{<<"cmd">> := <<"get_timeline">>} = Cmd, State) ->
+dispatch_request(#{<<"cmd">> := <<"get_timeline">>} = Cmd, State = #state{}) ->
     lager:info("Get timeline start"),
     Limit = mzb_bc:maps_get(<<"limit">>, Cmd, 10),
     MaxId = mzb_bc:maps_get(<<"max_id">>, Cmd, undefined),
@@ -282,7 +370,7 @@ dispatch_request(#{<<"cmd">> := <<"get_timeline">>} = Cmd, State) ->
                                timeline_bounds = {NewMinId, NewMaxId},
                                timeline_items  = TimelineIds}};
 
-dispatch_request(#{<<"cmd">> := <<"get_finals">>} = Cmd, State) ->
+dispatch_request(#{<<"cmd">> := <<"get_finals">>} = Cmd, State = #state{}) ->
     #{
         <<"stream_id">> := StreamId,
         <<"bench_ids">> := BenchIds,
@@ -293,11 +381,11 @@ dispatch_request(#{<<"cmd">> := <<"get_finals">>} = Cmd, State) ->
     spawn(fun() -> get_finals(Self, StreamId, BenchIds, MetricName, Kind, XEnv) end),
     {ok, State};
 
-dispatch_request(#{<<"cmd">> := <<"start_streaming_metric">>} = Cmd, State) ->
+dispatch_request(#{<<"cmd">> := <<"start_streaming_metric">>} = Cmd, State = #state{}) ->
     #{
-        <<"stream_id">> := StreamId, 
-        <<"bench">> := BenchId, 
-        <<"metric">> := MetricName, 
+        <<"stream_id">> := StreamId,
+        <<"bench">> := BenchId,
+        <<"metric">> := MetricName,
         <<"subsampling_interval">> := RawSubsamplingInterval,
         <<"time_window">> := RawTimeWindow,
         <<"begin_time">> := RawBeginTime,
@@ -329,7 +417,7 @@ dispatch_request(#{<<"cmd">> := <<"start_streaming_metric">>} = Cmd, State) ->
         <<"false">> -> false
     end,
 
-    {ok, add_stream(StreamId, BenchId, MetricName, 
+    {ok, add_stream(StreamId, BenchId, MetricName,
                     #stream_parameters{
                         subsampling_interval = SubsamplingInterval,
                         time_window = TimeWindow,
@@ -344,7 +432,7 @@ dispatch_request(#{<<"cmd">> := <<"stop_streaming_metric">>} = Cmd,
     #{<<"stream_id">> := StreamId} = Cmd,
     {ok, State#state{metric_streams = remove_stream(StreamId, Streams)}};
 
-dispatch_request(#{<<"cmd">> := <<"start_streaming_logs">>} = Cmd, State) ->
+dispatch_request(#{<<"cmd">> := <<"start_streaming_logs">>} = Cmd, State = #state{}) ->
     #{<<"bench">> := BenchId,
       <<"stream_id">> := StreamId} = Cmd,
     {ok, add_log_stream(BenchId, StreamId, State)};
@@ -354,52 +442,73 @@ dispatch_request(#{<<"cmd">> := <<"stop_streaming_logs">>} = Cmd,
     #{<<"stream_id">> := StreamId} = Cmd,
     {ok, State#state{log_streams = remove_stream(StreamId, Streams)}};
 
-dispatch_request(#{<<"cmd">> := <<"add_tag">>} = Cmd, #state{} = State) ->
-    #{<<"bench">> := BenchId, <<"tag">> := Tag} = Cmd,
-    try
-        ok = mzb_api_server:add_tags(BenchId, [binary_to_list(Tag)])
-    catch
-        _:Exception ->
-            Str =
-                case Exception of
-                    {ReasonAtom, ReasonStr} when is_atom(ReasonAtom) -> ReasonStr;
-                    _ -> io_lib:format("~p", Exception)
-                end,
-            mzb_api_firehose:notify(danger, mzb_string:format("Add tag failed: ~s", [Str]))
-    end,
+dispatch_request(#{<<"cmd">> := <<"update_name">>} = Cmd, #state{user_info = UserInfo} = State) ->
+    #{<<"bench">> := BenchId, <<"name">> := NewName} = Cmd,
+    apply_update(
+        fun () ->
+            _ = mzb_api_auth:auth_api_call(<<"POST">>, <<"/update_name">>, {login, UserInfo}, BenchId),
+            ok = mzb_api_server:update_name(BenchId, [binary_to_list(NewName)])
+        end),
     mzb_api_firehose:update_bench(mzb_api_server:status(BenchId)),
     {ok, State};
 
-dispatch_request(#{<<"cmd">> := <<"remove_tag">>} = Cmd, #state{} = State) ->
+dispatch_request(#{<<"cmd">> := <<"add_tag">>} = Cmd, #state{user_info = UserInfo} = State) ->
     #{<<"bench">> := BenchId, <<"tag">> := Tag} = Cmd,
-    try
-        ok = mzb_api_server:remove_tags(BenchId, [binary_to_list(Tag)])
-    catch
-        _:Exception ->
-            Str =
-                case Exception of
-                    {ReasonAtom, ReasonStr} when is_atom(ReasonAtom) -> ReasonStr;
-                    _ -> io_lib:format("~p", Exception)
-                end,
-            mzb_api_firehose:notify(danger, mzb_string:format("Add tag failed: ~s", [Str]))
-    end,
+    apply_update(
+        fun () ->
+            _ = mzb_api_auth:auth_api_call(<<"POST">>, <<"/add_tag">>, {login, UserInfo}, BenchId),
+            ok = mzb_api_server:add_tags(BenchId, [binary_to_list(Tag)])
+        end),
+    mzb_api_firehose:update_bench(mzb_api_server:status(BenchId)),
+    {ok, State};
+
+dispatch_request(#{<<"cmd">> := <<"remove_tag">>} = Cmd, #state{user_info = UserInfo} = State) ->
+    #{<<"bench">> := BenchId, <<"tag">> := Tag} = Cmd,
+    apply_update(
+        fun () ->
+            _ = mzb_api_auth:auth_api_call(<<"POST">>, <<"/remove_tag">>, {login, UserInfo}, BenchId),
+            ok = mzb_api_server:remove_tags(BenchId, [binary_to_list(Tag)])
+        end),
     mzb_api_firehose:update_bench(mzb_api_server:status(BenchId)),
     {ok, State};
 
 dispatch_request(Cmd, State) ->
-    lager:warning("~p has received unexpected info: ~p", [?MODULE, Cmd]),
+    lager:warning("~p has received unexpected info: ~p~n~p", [?MODULE, Cmd, State]),
     {ok, State}.
+
+apply_update(Fun) ->
+    try
+        Fun()
+    catch
+        _:Exception ->
+            Str =
+                case Exception of
+                    {ReasonAtom, ReasonStr} when is_atom(ReasonAtom) -> ReasonStr;
+                    _ -> io_lib:format("~p", [Exception])
+                end,
+            mzb_api_firehose:notify(danger, mzb_string:format("~s", [Str]))
+    end.
+
+disk_status() ->
+  FreeRequired = application:get_env(mzbench_api, warn_free_disk_kb, 0),
+  case disksup:get_disk_data() of
+      [{"none",0,0}] -> {1, 0};
+      DiskUsage -> Free = lists:sum([(100 - Percent) * Size / 100||{_, Size, Percent} <- DiskUsage]),
+          if Free < FreeRequired -> {0, Free};
+              true -> {1, Free}
+          end
+  end.
 
 add_stream(StreamId, BenchId, MetricName, StreamParams, #state{metric_streams = Streams} = State) ->
     #stream_parameters{
-        subsampling_interval = SubsamplingInterval, 
-        time_window = TimeWindow, 
-        begin_time = BeginTime, 
-        end_time = EndTime, 
+        subsampling_interval = SubsamplingInterval,
+        time_window = TimeWindow,
+        begin_time = BeginTime,
+        end_time = EndTime,
         stream_after_eof = StreamAfterEof
     } = StreamParams,
-    lager:debug("Starting streaming metric ~p of the benchmark #~p with stream_id = ~p, subsampling_interval = ~p, 
-                    begin_time = ~p, end_time = ~p, time_window = ~p, stream_after_eof = ~p", 
+    lager:debug("Starting streaming metric ~p of the benchmark #~p with stream_id = ~p, subsampling_interval = ~p,
+                    begin_time = ~p, end_time = ~p, time_window = ~p, stream_after_eof = ~p",
                     [MetricName, BenchId, StreamId, SubsamplingInterval, BeginTime, EndTime, TimeWindow, StreamAfterEof]),
     Self = self(),
 
@@ -438,6 +547,25 @@ get_all_tags() ->
         end, []),
     [list_to_binary(T) || T <- lists:usort(Tags)].
 
+get_benchset(Query, BenchsetId, Charts) ->
+    Filter = fun (I) -> apply_filter(Query, normalize([I])) end,
+    {BenchInfos0, Min, _} = mzb_api_server:get_info(Filter, undefined, undefined, undefined, _MaxBenchsetSize = 200),
+
+    Sets = lists:map(fun(Chart) ->
+              Kind = binary_to_list(mzb_bc:maps_get(<<"kind">>, Chart, <<"undefined">>)),
+              Metric = binary_to_list(mzb_bc:maps_get(<<"metric">>, Chart, <<"undefined">>)),
+              Size = list_to_integer(binary_to_list(mzb_bc:maps_get(<<"size">>, Chart, <<"0">>))),
+              GroupEnv = binary_to_list(mzb_bc:maps_get(<<"group_env">>, Chart, <<"undefined">>)),
+              XEnv = binary_to_list(mzb_bc:maps_get(<<"x_env">>, Chart, <<"undefined">>)),
+              benchset(BenchInfos0, Metric, Kind, Size, GroupEnv, XEnv)
+          end, Charts),
+    #{
+        type => "BENCHSET",
+        data => Sets,
+        benchset_id => BenchsetId,
+        next_id => Min
+     }.
+
 benchset(BenchInfos, Metric, Kind, Size, GroupEnv, XEnv) ->
     benchset(BenchInfos, Metric, Kind, Size, GroupEnv, XEnv, []).
 
@@ -453,11 +581,13 @@ benchset([BenchInfo | Rest], Metric, Kind, Size, GroupEnv, XEnv, Acc) ->
              end,
     benchset(Rest, Metric, Kind, Size, GroupEnv, XEnv, NewAcc).
 
-has_metric(Metric, "compare", #{metrics:= #{groups:= Groups}}) ->
+has_metric(Metric, "compare", #{metrics:= #{groups:= Groups}, status := Status})
+                            when (Status == complete) or (Status == failed) or (Status == stopped) ->
     lists:any(fun(#{graphs:= Graphs}) ->
         lists:any(fun(#{metrics:= Metrics}) ->
             lists:any(fun(#{name:= Name}) when Name == Metric -> true; (_) -> false end, Metrics)
                 end, Graphs) end, Groups);
+has_metric(_Metric, "compare", _) -> false;
 has_metric(Metric, _, #{results:= Res}) when is_map(Res) ->
     find_result_metric(list_to_binary(Metric), Res, false);
 has_metric(_, _, _) ->
@@ -523,7 +653,10 @@ get_finals(Pid, StreamId, BenchIds, MetricName, Kind, XEnv) ->
                           true -> Timestamp end,
                 {XVal, YVal} end, BenchIds),
     Sorted = lists:sort(fun ({A, _}, {B, _}) -> A >= B end, Data),
-    Aggregated = aggregate(Sorted),
+    Aggregated = if (Kind == <<"regression">>) and (XEnv /= <<"Time">>) ->
+      lists:zip(lists:reverse(lists:seq(1, length(Sorted))),
+          lists:map(fun ({_, B}) -> {B, B, B} end, Sorted));
+      true -> aggregate(Sorted) end,
     Values = lists:foldl(fun({X, {Min, Avg, Max}}, Acc) -> [io_lib:format("~p\t~p\t~p\t~p~n", [X, Avg, Min, Max]) |Acc] end, [], Aggregated),
     Pid ! {metric_value, StreamId, Values},
     Pid ! {metric_batch_end, StreamId}.
@@ -564,14 +697,16 @@ normalize(BenchInfos) ->
     lists:map(fun normalize_bench/1, Sorted).
 
 normalize_bench({Id, Status = #{config:= Config}}) ->
-    StatusFields =  mzb_bc:maps_with([status, metrics], Status),
+    StatusFields = mzb_bc:maps_with([status, metrics], Status),
 
+    CreateTime = mzb_bc:maps_get(create_time, Status, maps:get(start_time, Status)),
+    TimeMap = mzb_bc:maps_with([create_time, finish_time, start_time],
+                               Status#{create_time => CreateTime}),
     TimeFields = maps:fold(fun (K, V, AccIn) when is_number(V) ->
                                    maps:put(K, mzb_string:iso_8601_fmt(V), AccIn);
                                (_, _, AccIn) -> AccIn
                            end,
-                           #{},
-                           mzb_bc:maps_with([finish_time, start_time], Status)),
+                           #{}, TimeMap),
 
     #{script:= #{body:= ScriptBody,
                  name:= ScriptName},
@@ -582,7 +717,7 @@ normalize_bench({Id, Status = #{config:= Config}}) ->
       env:=            Env} = Config,
     Results = mzb_api_endpoints:format_results(Status),
     DefaultVMArgs = application:get_env(mzbench_api, vm_args, undefined),
-    EnvMap = mzb_bc:maps_without(["mzb_script_name", "nodes_num", "bench_workers_dir", "bench_script_dir", "worker_hosts"], maps:from_list(Env)),
+    EnvMap = mzb_bc:maps_without(["mzb_script_name", "nodes_num", "bench_workers_dir", "bench_script_dir", "worker_hosts", "mzb_bench_id"], maps:from_list(Env)),
     EnvMap2 = if VMArgs =/= DefaultVMArgs -> maps:put(vm_args, VMArgs, EnvMap);
                   true -> EnvMap end,
     ScriptFields = #{script_body => ScriptBody,
@@ -590,9 +725,17 @@ normalize_bench({Id, Status = #{config:= Config}}) ->
                      name => BenchName,
                      nodes => Nodes,
                      cloud => Cloud,
+                     exclusive => mzb_bc:maps_get(exclusive, Config, ""),
                      env => EnvMap2,
                      results => Results,
-                     tags => [erlang:list_to_atom(E) || Tags <- [mzb_bc:maps_get(tags, Config, [])], is_list(Tags), E <- Tags]
+                     result_str => mzb_bc:maps_get(result_str, Status, ""),
+                     author => mzb_bc:maps_get(author, Config, "anonymous"),
+                     author_name => mzb_bc:maps_get(author_name, Config, ""),
+                     tags => [erlang:list_to_atom(E) || Tags <- [mzb_bc:maps_get(tags, Config, [])], is_list(Tags), E <- Tags],
+                     parent => mzb_bc:maps_get(parent, Config, undefined),
+                     system_errors => mzb_bc:maps_get(system_errors, Status, 0),
+                     user_errors => mzb_bc:maps_get(user_errors, Status, 0),
+                     includes => maps:from_list([{iolist_to_binary(F), S} || {F, S} <- mzb_bc:maps_get(includes, Status, [])])
                      },
 
     lists:foldl(fun (Map, Acc) -> maps:merge(Acc, Map) end,
@@ -626,13 +769,13 @@ apply_filter(Query, BenchInfos) ->
     end.
 
 get_searchable_fields(BenchInfo) ->
-    SearchFields = mzb_bc:maps_with([id, status, name, script_name, start_time, finish_time], BenchInfo),
+    SearchFields = mzb_bc:maps_with([id, status, name, script_name, author, start_time, finish_time], BenchInfo),
     Values = maps:values(SearchFields),
-    Tags = [ "#" ++ erlang:atom_to_list(T) || T <- mzb_bc:maps_get(tags, BenchInfo, [])],
-    lists:map(fun (X) when is_atom(X) -> atom_to_list(X);
-                  (X) when is_integer(X) -> integer_to_list(X);
-                  (X) -> X
-              end, Values) ++ Tags.
+    Tags = [ erlang:atom_to_list(T) || T <- mzb_bc:maps_get(tags, BenchInfo, [])],
+    lists:map(fun (X) when is_atom(X) -> {substr, atom_to_list(X)};
+                  (X) when is_integer(X) -> {substr, integer_to_list(X)};
+                  (X) -> {substr, X}
+              end, Values) ++ [{exact, "#"++T} || T <- Tags] ++ [{substr, T} || T <- Tags].
 
 is_satisfy_filter(Query, BenchInfo) ->
     is_satisfy_fields(Query, BenchInfo) orelse is_satisfy_env(Query, BenchInfo).
@@ -654,12 +797,15 @@ compare(_, _) -> false.
 
 is_satisfy_fields(Query, BenchInfo) ->
     try
+        EscapedQuery = re:replace(Query, "[.^$*+?()[{\\\|\s#]", "\\\\&",[global]),
         SearchFields = get_searchable_fields(BenchInfo),
-        lists:any(fun(Field) ->
-                      case re:run(Field, Query, [caseless]) of
+        lists:any(fun({substr, Field}) ->
+                      case re:run(Field, EscapedQuery, [caseless]) of
                           {match, _} -> true;
                           _ -> false
-                      end
+                      end;
+                      ({exact, Field}) ->
+                          Field == Query
                   end, SearchFields)
     catch _:Error ->
         lager:error("Failed to apply filter: ~p ~p~n Query: ~p -- BenchInfo ~p", [Error, erlang:get_stacktrace(), Query, BenchInfo]),
@@ -825,8 +971,8 @@ perform_streaming(Id, FileReader, SendFun, #stream_parameters{time_window = Time
                         filter_by_time(StartDate - ReportInterval, CurDate + ReportInterval, Values)
                 end,
 
-                {NewLastSentValueTimestamp, NewSumForMean, NewNumValuesForMean, NewMin, NewMax, FilteredValues} 
-                    = perform_subsampling(SubsamplingInterval, LastSentValueTimestamp, CurrentSumForMean, CurrentNumValuesForMean, 
+                {NewLastSentValueTimestamp, NewSumForMean, NewNumValuesForMean, NewMin, NewMax, FilteredValues}
+                    = perform_subsampling(SubsamplingInterval, LastSentValueTimestamp, CurrentSumForMean, CurrentNumValuesForMean,
                                           CurrentMin, CurrentMax, TimeFilteredValues),
                 _ = SendFun({data, FilteredValues}),
 
@@ -851,7 +997,7 @@ perform_streaming(Id, FileReader, FilteringSendFun, StoredFilteringData, Timeout
                 [] -> StoredFilteringData;
                 _ -> FilteringSendFun(StoredFilteringData, {data, lists:reverse(Buffer)})
             end,
-            NewStoredFilteringData2 = if 
+            NewStoredFilteringData2 = if
                 LinesInBatch > 0 -> FilteringSendFun(NewStoredFilteringData, batch_end);
                 true -> NewStoredFilteringData
             end,
@@ -894,7 +1040,7 @@ filter_by_time(BeginTime, EndTime, Values) ->
         end, [], Values)).
 
 perform_subsampling(SubsamplingInterval, LastSentValueTimestamp, PreviousSumForMean, PreviousNumValuesForMean, PreviousMin, PreviousMax, Values) ->
-    {NewLastSentValueTimestamp, NewSumForMean, NewNumValuesForMean, NewMin, NewMax, NewValuesReversed} = 
+    {NewLastSentValueTimestamp, NewSumForMean, NewNumValuesForMean, NewMin, NewMax, NewValuesReversed} =
         lists:foldl(fun(ValueString, {LastRetainedTime, SumForMean, NumValuesForMean, MinValue, MaxValue, Acc}) ->
             {ValueTimestamp, Value} = parse_value(ValueString),
 
@@ -908,17 +1054,17 @@ perform_subsampling(SubsamplingInterval, LastSentValueTimestamp, PreviousSumForM
                 Value > MaxValue -> Value;
                 true -> MaxValue
             end,
- 
+
             case LastRetainedTime of
-                undefined -> {ValueTimestamp, 0, 0, undefined, undefined, [ 
-                        io_lib:format("~p\t~p\t~p\t~p~n", 
+                undefined -> {ValueTimestamp, 0, 0, undefined, undefined, [
+                        io_lib:format("~p\t~p\t~p\t~p~n",
                             [ValueTimestamp, Value, NewMinValue, NewMaxValue]) | Acc]};
                 Timestamp ->
                     Interval = ValueTimestamp - Timestamp,
                     case Interval < SubsamplingInterval of
                         true -> {LastRetainedTime, SumForMean + Value, NumValuesForMean + 1, NewMinValue, NewMaxValue, Acc};
-                        false -> {ValueTimestamp, 0, 0, undefined, undefined, 
-                                    [io_lib:format("~p\t~p\t~p\t~p~n", 
+                        false -> {ValueTimestamp, 0, 0, undefined, undefined,
+                                    [io_lib:format("~p\t~p\t~p\t~p~n",
                                         [ValueTimestamp, (SumForMean + Value)/(NumValuesForMean + 1), NewMinValue, NewMaxValue]) | Acc]}
                     end
             end

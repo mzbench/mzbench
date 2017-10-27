@@ -7,9 +7,10 @@
     start_link/0,
     deactivate/0,
     start_bench/1,
-    restart_bench/1,
+    restart_bench/2,
     stop_bench/1,
     change_env/2,
+    run_command/4,
     bench_foldl/2,
     get_info/5,
     bench_finished/2,
@@ -19,6 +20,7 @@
     config_info/0,
     email_report/2,
     is_datastream_ended/1,
+    update_name/2,
     add_tags/2,
     remove_tags/2
 ]).
@@ -50,7 +52,7 @@ config_info() ->
             {ok, [ServerConfig | _]} = application:get_env(mzbench_api, server_configs),
             io:format("No config file is used, to create one run:~n"),
             io:format("cp ~s ~s~n", [AutoConfig, ServerConfig]);
-        Filename -> 
+        Filename ->
             io:format("Active config file is ~s~n", [Filename])
     end.
 
@@ -61,8 +63,8 @@ start_bench(Params) ->
         {error, Reason} -> erlang:error(Reason)
     end.
 
-restart_bench(Id) ->
-    case gen_server:call(?MODULE, {restart_bench, Id}, infinity) of
+restart_bench(Id, UserInfo) ->
+    case gen_server:call(?MODULE, {restart_bench, Id, UserInfo}, infinity) of
         {ok, Resp} -> Resp;
         {error, {exception, {C,E,ST}}} -> erlang:raise(C,E,ST);
         {error, not_found} ->
@@ -74,13 +76,24 @@ stop_bench(Id) ->
     case gen_server:call(?MODULE, {stop_bench, Id}, infinity) of
         ok -> ok;
         {error, not_found} ->
-            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])})
+            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
+        {error, Reason} ->
+            erlang:error(Reason)
     end.
 
 change_env(Id, Env) ->
+    case gen_server:call(?MODULE, {change_env, Id, Env}, infinity) of
+        ok -> ok;
+        {error, not_found} ->
+            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
+        {error, Reason} ->
+            erlang:error(Reason)
+    end.
+
+run_command(Id, Pool, Percent, Command) ->
     case ets:lookup(benchmarks, Id) of
         [{_, B, undefined}] ->
-            mzb_api_bench:change_env(B, Env);
+            mzb_api_bench:run_command(B, Pool, Percent, Command);
         [{_, _, _}] ->
             erlang:error({badarg, io_lib:format("Benchmark ~p is finished", [Id])});
         [] ->
@@ -105,6 +118,26 @@ is_datastream_ended(Id) ->
         [{_, B, _}] when is_pid(B) -> false;
         [{_, _, _Status}] -> true;
         [] -> erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])})
+    end.
+
+update_name(Id, NewName) ->
+    Res =
+        case ets:lookup(benchmarks, Id) of
+            [{_, B, undefined}] when is_pid(B) ->
+                try
+                    mzb_api_bench:update_name(B, NewName)
+                catch
+                    exit:{no_proc, _} -> gen_server:call(?MODULE, {update_name, Id, NewName})
+                end;
+            _ ->
+                gen_server:call(?MODULE, {update_name, Id, NewName})
+        end,
+    case Res of
+        ok ->
+            mzb_api_firehose:update_bench(mzb_api_server:status(Id)),
+            ok;
+        {error, not_found} -> erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
+        {error, invalid_benchmark} -> erlang:error({invalid_benchmark, io_lib:format("Benchmark ~p is in invalid state", [Id])})
     end.
 
 add_tags(Id, Tags) ->
@@ -283,8 +316,9 @@ server_data_dir() ->
     DataDir = mzb_api_paths:bench_data_dir(),
     filename:absname(DataDir).
 
-handle_call({start_bench, Params}, _From, #{status:= active} = State) ->
-    case start_bench_child(Params, State) of
+handle_call({start_bench, Params}, _From, #{status:= active, data_dir:= DataDir} = State) ->
+    NewParams = add_parent_resources(Params, DataDir),
+    case start_bench_child(NewParams, State) of
         {ok, Id, NewState} ->
             {reply, {ok, #{id => Id, status => <<"pending">>}}, NewState};
         {error, Reason, NewState} ->
@@ -295,21 +329,20 @@ handle_call({start_bench, Params}, _From, #{status:= inactive} = State) ->
     lager:info("[ SERVER ] Start of bench failed because server is inactive ~p", [Params]),
     {reply, {error, server_inactive}, State};
 
-handle_call({restart_bench, RestartId}, _From, #{status:= active, data_dir:= DataDir} = State) ->
+handle_call({restart_bench, RestartId, UserInfo}, _From, #{status:= active, data_dir:= DataDir} = State) ->
     lager:info("[ SERVER ] Restarting bench #~b", [RestartId]),
     RestartIdStr = erlang:integer_to_list(RestartId),
     ParamsFile = filename:join([DataDir, RestartIdStr, "params.bin"]),
     case file:read_file(ParamsFile) of
         {ok, Binary} ->
 
-            Params =
-                % BC code: migration of data, convert dont_provision_nodes to provistion_nodes
-                case erlang:binary_to_term(Binary) of
-                    #{dont_provision_nodes:= V} = P -> P#{provision_nodes => not V};
-                    P -> P
-                end,
+            Params = erlang:binary_to_term(Binary),
 
-            case start_bench_child(Params, State) of
+            NewParams = Params#{author => maps:get(login, UserInfo),
+                                author_name => maps:get(name, UserInfo),
+                                parent => RestartId},
+
+            case start_bench_child(NewParams, State) of
                 {ok, Id, NewState} ->
                     {reply, {ok, #{id => Id, status => <<"pending">>}}, NewState};
                 {error, Reason, NewState} ->
@@ -321,7 +354,7 @@ handle_call({restart_bench, RestartId}, _From, #{status:= active, data_dir:= Dat
             {reply, {error, Reason}, State}
     end;
 
-handle_call({restart_bench, RestartId}, _From, #{status:= inactive} = State) ->
+handle_call({restart_bench, RestartId, _}, _From, #{status:= inactive} = State) ->
     lager:info("[ SERVER ] Restart of bench failed because server is inactive #~p", [RestartId]),
     {reply, {error, server_inactive}, State};
 
@@ -338,10 +371,19 @@ handle_call({stop_bench, Id}, _, #{} = State) ->
     lager:info("[ SERVER ] Stop bench #~b request received", [Id]),
     case ets:lookup(benchmarks, Id) of
         [{_, BenchPid, undefined}] ->
-            ok = mzb_api_bench:interrupt_bench(BenchPid),
-            {reply, ok, State};
+            {reply, mzb_api_bench:interrupt_bench(BenchPid), State};
         [{_, _, _}] ->
             {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({change_env, Id, Env}, _, #{} = State) ->
+    case ets:lookup(benchmarks, Id) of
+        [{_, B, undefined}] ->
+            {reply, mzb_api_bench:change_env(B, Env), State};
+        [{_, _, _}] ->
+            {reply, {error, finished}, State};
         [] ->
             {reply, {error, not_found}, State}
     end;
@@ -351,6 +393,16 @@ handle_call(is_ready, _, #{status:= active} = State) ->
 
 handle_call(is_ready, _, #{status:= inactive} = State) ->
     {reply, false, State};
+
+handle_call({update_name, Id, NewName}, _, State) ->
+    case ets:lookup(benchmarks, Id) of
+        [{_, _, Status = #{config:= Config}}] ->
+            NewStatus = maps:put(config, maps:put(benchmark_name, NewName, Config), Status),
+            save_results(Id, NewStatus, State),
+            {reply, ok, State};
+        [{_, _, _}] -> {reply, {error, invalid_benchmark}, State};
+        [] -> {reply, {error, not_found}, State}
+    end;
 
 handle_call({add_tags, Id, Tags}, _, State) ->
     case ets:lookup(benchmarks, Id) of
@@ -442,10 +494,11 @@ start_bench_child(Params, #{next_id:= Id, monitors:= Mons, user:= User} = State)
                 catch
                     _:_ ->
                         StartTime = mzb_api_bench:seconds(),
-                        #{id => Id, status => zombie, start_time => StartTime, finish_time => StartTime, config => #{}, metrics => #{}}
+                        #{id => Id, status => zombie, create_time => StartTime,
+                          config => #{}, metrics => #{}}
                 end,
             % If server crashes for some reason we want some info about this bench to be saved on disk
-            Status2 = Status#{finish_time => maps:get(start_time, Status), status => zombie},
+            Status2 = Status#{start_time => maps:get(create_time, Status), finish_time => maps:get(create_time, Status), status => zombie},
             write_status(Id, Status2, State),
             NewState = State#{next_id => Id + 1, monitors => maps:put(Mon, Id, Mons)},
             {ok, Id, check_max_bench_num(NewState)};
@@ -542,3 +595,22 @@ sys_username() ->
         User -> User
     end.
 
+add_parent_resources(Params, DataDir) ->
+    case mzb_bc:maps_get(parent, Params, undefined) of
+        undefined -> Params;
+        Parent ->
+            ParentStr = erlang:integer_to_list(Parent),
+            ParamsFile = filename:join([DataDir, ParentStr, "params.bin"]),
+            case file:read_file(ParamsFile) of
+                {ok, Binary} ->
+                    ParentParams = erlang:binary_to_term(Binary),
+                    Includes = mzb_bc:maps_get(includes, Params, []),
+                    ParentIncludes = mzb_bc:maps_get(includes, ParentParams, []),
+                    ExistingFiles = proplists:get_keys(Includes),
+                    NewIncludes = Includes ++ [{F, D} || {F, D} <- ParentIncludes, not lists:member(F, ExistingFiles)],
+                    Params#{includes => NewIncludes};
+                {error, ErrorReason} ->
+                    lager:error("Failed to read parent benchmark #~p (file ~p) cause ~p", [Parent, ParamsFile, ErrorReason]),
+                    Params
+            end
+    end.

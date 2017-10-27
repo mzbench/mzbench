@@ -3,6 +3,7 @@
 -export([start_link/6,
          pool_report/3,
          change_env/1,
+         run_command/3,
          attach/0,
          notify/1,
          compile_and_load/2,
@@ -31,6 +32,7 @@
     stop_reason = undefined,
     script     = undefined,
     env        = undefined,
+    assertions = [],
     nodes      = [],
     continuation = undefined
 }).
@@ -47,6 +49,9 @@ pool_report(PoolPid, Info, IsFinal) ->
 
 change_env(Env) ->
     gen_server:call(?MODULE, {change_env, Env}, infinity).
+
+run_command(Pool, Percent, Command) ->
+    gen_server:call(?MODULE, {run_command, Pool, Percent, Command}, infinity).
 
 attach() ->
     gen_server:call(?MODULE, attach, infinity).
@@ -66,22 +71,38 @@ is_alive() ->
 
 init([SuperPid, BenchName, Script, Nodes, Env, Continuation]) ->
     system_log:info("[ director ] Bench name ~p, director node ~p", [BenchName, erlang:node()]),
-    {Pools, Env2} = mzbl_script:extract_pools_and_env(Script, Env),
-    system_log:info("[ director ] Pools: ~p, Env: ~p", [Pools, Env2]),
-
-    {_, []} = mzb_interconnect:multi_call(Nodes, {set_signaler_nodes, Nodes}),
-    gen_server:cast(self(), start_pools),
     _ = mzb_lists:pmap(fun(Node) ->
         ok = mzb_interconnect:call(Node, {mzb_watchdog, activate})
     end, lists:usort(Nodes)),
-    {ok, #state{
-        script = Pools,
-        env = Env2,
-        nodes = Nodes,
-        bench_name = BenchName,
-        super_pid = SuperPid,
-        continuation = Continuation
-    }}.
+    try mzbl_script:extract_info(Script, Env) of
+        {Pools, Env2, Asserts} ->
+            system_log:info("[ director ] Pools: ~p, Env: ~p, Asserts: ~p", [Pools, Env2, Asserts]),
+
+            {_, []} = mzb_interconnect:multi_call(Nodes, {set_signaler_nodes, Nodes}),
+            gen_server:cast(self(), start_pools),
+
+            {ok, #state{
+                script = Pools,
+                env = Env2,
+                assertions = Asserts,
+                nodes = Nodes,
+                bench_name = BenchName,
+                super_pid = SuperPid,
+                continuation = Continuation
+            }}
+    catch
+        _:{import_resource_error, _, _, _} = Reason ->
+            notify(Reason),
+            {ok, #state{
+                script = [],
+                env = [],
+                assertions = [],
+                nodes = Nodes,
+                bench_name = BenchName,
+                super_pid = SuperPid,
+                continuation = Continuation
+            }}
+    end.
 
 handle_call({change_env, NewEnv}, _From, #state{script = Script, env = Env, nodes = Nodes} = State) ->
     system_log:info("Changing env: ~p", [NewEnv]),
@@ -98,6 +119,18 @@ handle_call({change_env, NewEnv}, _From, #state{script = Script, env = Env, node
             {reply, {error, {internal_error, E}}, State}
     end;
 
+handle_call({run_command, Pool, Percent, Command}, _From, #state{nodes = Nodes} = State) ->
+    system_log:info("Running a command: ~p on ~p of pool~p", [Command, Percent, Pool]),
+    try
+        {Replies, []} = mzb_interconnect:multi_call(lists:usort([node()|Nodes]), {run_command, Pool, Percent, Command}),
+        true = lists:all(fun(X) -> X == ok end, lists:flatten([L || {_, L} <- Replies])),
+        {reply, ok, State}
+    catch
+        _:E ->
+            system_log:error("Command run failed with reason ~p~nCommand:~p~nStacktrace:~p", [E, Command, erlang:get_stacktrace()]),
+            {reply, {error, {internal_error, E}}, State}
+    end;
+
 handle_call(attach, From, State) ->
     maybe_report_and_stop(State#state{owner = From});
 
@@ -110,14 +143,14 @@ handle_cast(start_pools, #state{nodes = []} = State) ->
     {stop, empty_nodes, State};
 
 handle_cast(start_pools, #state{script = Script, env = Env, nodes = Nodes} = State) ->
-    try start_metrics(State) of
-        ok ->
-            {[{_, {ok, NewScript}}|_], []} = mzb_interconnect:multi_call(lists:usort([node()|Nodes]), {compile_env, Script, Env}),
-            StartedPools = start_pools(NewScript, Env, Nodes, []),
-            maybe_stop(State#state{pools = StartedPools})
+    try
+        start_metrics(State),
+        {[{_, {ok, NewScript}}|_], []} = mzb_interconnect:multi_call(lists:usort([node()|Nodes]), {compile_env, Script, Env}),
+        StartedPools = start_pools(NewScript, Env, Nodes, []),
+        maybe_stop(State#state{pools = StartedPools})
     catch
         _:E ->
-            maybe_stop(State#state{stop_reason = {start_metrics_failed, E}})
+            maybe_stop(State#state{stop_reason = E})
     end;
 
 handle_cast({pool_report, PoolPid, Info, true}, #state{pools = Pools} = State) ->
@@ -133,6 +166,9 @@ handle_cast({notification, {assertions_failed, _} = Reason}, #state{} = State) -
     maybe_stop(State#state{stop_reason = Reason});
 
 handle_cast({notification, server_connection_closed = Reason}, #state{} = State) ->
+    maybe_stop(State#state{stop_reason = Reason});
+
+handle_cast({notification, {import_resource_error, _, _, _} = Reason}, #state{} = State) ->
     maybe_stop(State#state{stop_reason = Reason});
 
 handle_cast(Req, State) ->
@@ -170,16 +206,23 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-start_metrics(#state{script = Script, env = Env, nodes = Nodes, super_pid = SuperPid}) ->
-    {ok, _} = supervisor:start_child(SuperPid,
-        {mzb_metrics,
-         {mzb_metrics, start_link, [Env, Nodes]},
-         transient, 5000, worker, [mzb_metrics]}),
-    {NodeSystemMetrics, []} = mzb_interconnect:multi_call(lists:usort([node()|Nodes]), get_system_metrics, _DefaultTimeout = 60000),
-    SystemMetrics = lists:append([M || {_, M} <- NodeSystemMetrics]),
-    WorkerMetrics = mzb_script_metrics:script_metrics(Script, Nodes),
-    mzb_metrics:declare_metrics(WorkerMetrics ++ SystemMetrics),
-    ok.
+start_metrics(#state{script = Script, assertions = Asserts, env = Env, nodes = Nodes, super_pid = SuperPid}) ->
+    try
+        LoopAssertMetrics = mzbl_script:get_loop_assert_metrics(Script),
+        {ok, _} = supervisor:start_child(SuperPid,
+            {mzb_metrics,
+             {mzb_metrics, start_link, [Asserts, LoopAssertMetrics, Nodes, Env]},
+             transient, 5000, worker, [mzb_metrics]}),
+        {NodeSystemMetrics, []} = mzb_interconnect:multi_call(lists:usort([node()|Nodes]), get_system_metrics, _DefaultTimeout = 60000),
+        SystemMetrics = lists:append([M || {_, M} <- NodeSystemMetrics]),
+        WorkerMetrics = mzb_script_metrics:script_metrics(Script, Nodes),
+        mzb_metrics:declare_metrics(WorkerMetrics ++ SystemMetrics),
+        ok
+    catch
+        C:E ->
+            ST = erlang:get_stacktrace(),
+            erlang:raise(C, {start_metrics_failed, E}, ST)
+    end.
 
 start_pools([], _, _, Acc) ->
     system_log:info("[ director ] Started all pools"),
@@ -254,23 +297,36 @@ maybe_report_and_stop(#state{owner = Owner, continuation = Continuation} = State
     {stop, normal, State}.
 
 format_results(#state{stop_reason = normal, succeed = Ok, failed = 0, stopped = 0}) ->
-    {ok, mzb_string:format("SUCCESS~n~b workers have finished successfully", [Ok]), get_stats_data()};
+    {ok, mzb_string:format("~b workers have finished successfully", [Ok]), get_stats_data()};
 format_results(#state{stop_reason = normal, succeed = Ok, failed = 0, stopped = Stopped}) ->
-    {ok, mzb_string:format("SUCCESS~n~b workers have finished successfully (~b workers have been stopped)", [Ok, Stopped]), get_stats_data()};
+    {ok, mzb_string:format("~b workers have finished successfully (~b workers have been stopped)", [Ok, Stopped]), get_stats_data()};
 format_results(#state{stop_reason = normal, succeed = Ok, failed = NOk, stopped = 0}) ->
     {error, {workers_failed, NOk},
-        mzb_string:format("FAILED~n~b of ~b workers failed", [NOk, Ok + NOk]), get_stats_data()};
+        mzb_string:format("~b of ~b workers failed", [NOk, Ok + NOk]), get_stats_data()};
 format_results(#state{stop_reason = normal, succeed = Ok, failed = NOk, stopped = Stopped}) ->
     {error, {workers_failed, NOk},
-        mzb_string:format("FAILED~n~b of ~b workers failed and ~b workers have been stopped", [NOk, Ok + NOk, Stopped]), get_stats_data()};
+        mzb_string:format("~b of ~b workers failed and ~b workers have been stopped", [NOk, Ok + NOk, Stopped]), get_stats_data()};
+format_results(#state{stop_reason = {assertions_failed, dynamic_deadlock}}) ->
+    Str = mzb_string:format("Dynamic deadlock detected", []),
+    {error, {asserts_failed, 1}, Str, get_stats_data()};
 format_results(#state{stop_reason = {assertions_failed, FailedAsserts}}) ->
     AssertsStr = string:join([S||{_, S} <- FailedAsserts], "\n"),
-    Str = mzb_string:format("FAILED~n~b assertions failed~n~s",
+    Str = mzb_string:format("~b assertions failed~n~s",
                         [length(FailedAsserts), AssertsStr]),
     {error, {asserts_failed, length(FailedAsserts)}, Str, get_stats_data()};
 format_results(#state{stop_reason = {start_metrics_failed, E}}) ->
-    Str = mzb_string:format("FAILED~nstart metrics subsystem failed: ~p", [E]),
-    {error, start_metrics_failed, Str, get_stats_data()}.
+    Str = mzb_string:format("start metrics subsystem failed: ~p", [E]),
+    {error, start_metrics_failed, Str, get_stats_data()};
+format_results(#state{stop_reason = {import_resource_error, File, Type, Error}}) ->
+    Str = mzb_string:format("File ~p import failed: ~p", [File, Error]),
+    {error, {import_resource_error, File, Type, Error}, Str, {[], []}};
+format_results(#state{stop_reason = {var_is_unbound, Var}}) ->
+    Str = mzb_string:format("Var '~s' is not defined", [Var]),
+    {error, {var_is_unbound, Var}, Str, {[], []}};
+format_results(#state{stop_reason = Reason}) ->
+    Str = mzb_string:format("~p", [Reason]),
+    {error, Reason, Str, {[], []}}.
+
 
 get_stats_data() ->
     try
@@ -285,4 +341,3 @@ compile_and_load(Script, Env) ->
     {NewScript, ModulesToLoad} = mzb_compiler:compile(Script, Env),
     [{module, _} = code:load_binary(Mod, mzb_string:format("~s.erl", [Mod]), Bin) || {Mod, Bin} <- ModulesToLoad],
     {ok, NewScript}.
-

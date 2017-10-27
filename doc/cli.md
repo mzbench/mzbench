@@ -1,4 +1,4 @@
-The **MZBench CLI** lets you control you control the server and benchmarks from the command line. It utilizes the [MZBench API](api.md), but goes beyond it: it can do things even without a running MZBench server.
+The **MZBench CLI** lets you control the server and benchmarks from the command line. It utilizes the [MZBench API](api.md), but goes beyond it: it can do things even without a running MZBench server.
 
 The commands are invoked by the `mzbench` script in the `bin` directory:
 
@@ -7,7 +7,7 @@ The commands are invoked by the `mzbench` script in the `bin` directory:
 $ ./bin/mzbench start --env foo=bar --nodes=5
 # or:
 $ cd bin
-$ mzbench start --env foo=bar --nodes=5
+$ ./mzbench start --env foo=bar --nodes=5
 ```
 
 # Commands
@@ -64,7 +64,7 @@ Optional params:
 ```bash
 $ mzbench start --env foo=bar --nodes=5 foo.bdl
 {
-    "status": "pending", 
+    "status": "pending",
     "id": 86
 }
 ```
@@ -75,7 +75,7 @@ Positional param:
 
 `<scenario_file>`
 :   The path to the [scenario](scenarios/spec.md) file for the benchmark.
- 
+
 Optional params:
 
 `--name <benchmark_name>`
@@ -102,19 +102,18 @@ Optional params:
 `--provision_nodes false`
 :   Skip MZBench installation on the nodes.
 
-`--exclusive_node_usage false`
-:   Allow multiple nodes to be hosted on the same physical machine, i.e. do not allocate a physical machine exclusively for each node.
-
 `--node_commit=<commit>`
 :   Commit hash or branch name in the MZBench repository pointing to the MZBench version to install on the nodes.
 
+`--exclusive=<label>`
+:   Benchmarks with the same label couldn't be executed simultaneously, any further benches with this label will be blocked until its execution finishes.
 
 ### run
 
 ```bash
 $ mzbench run --env foo=bar --nodes=5 foo.bdl
 {
-    "status": "pending", 
+    "status": "pending",
     "id": 86
 }
 ```
@@ -168,7 +167,7 @@ Positional param:
 ```bash
 $ mzbench status 86
 {
-    "status": "provisioning", 
+    "status": "provisioning",
     "start_time": "2015-11-18T13:52:04Z"
 }
 ```
@@ -207,7 +206,23 @@ Start of log for bench 89
 ...
 ```
 
-View the benchmark logs.
+View the benchmark system logs.
+
+Positional param:
+
+`<benchmark_id>`
+:   The ID of the benchmark as returned by [start](#start) or [run](#run).
+
+### userlog
+
+```bash
+$ ./bin/mzbench userlog 89
+Start of userlog for bench 89
+14:02:47.080 [info] <0.237.0> Dummy print: "FOO"
+...
+```
+
+View the benchmark worker logs.
 
 Positional param:
 
@@ -221,7 +236,7 @@ Positional param:
 $ ./bin/mzbench data 89
 [
     {
-        "target": "workers.pool1.km.ended.rps.value", 
+        "target": "workers.pool1.km.ended.rps.value",
         "datapoints": [
 ...
 ```
@@ -254,6 +269,114 @@ Optional param:
 
 `--env <name=value> ...`
 :   [Environment variable](scenarios/spec.md#environment-variables) definitions.
+
+### clusters_info
+
+```bash
+$ mzbench clusters_info
+[
+    {
+        "timestamp": 1479140779,
+        "bench_id": 29,
+        "n": 2,
+        "state": "allocated",
+        "hosts": [
+            "127.0.0.1"
+        ],
+        "provider": "mzb_dummycloud_plugin",
+        "id": 5
+    },
+...
+```
+
+Check for currently allocated clusters.
+
+### remove_clusters_info
+
+```bash
+$ mzbench remove_cluster_info 5
+{}
+```
+
+Remove cluster from a list of allocated clusters.
+
+Positional param:
+
+`<cluster_id>`
+:   The ID of the cluster as returned by clusters_info.
+
+### deallocate_cluster
+
+```bash
+$ mzbench deallocate_cluster 5
+{}
+```
+
+Deallocate cluster and remove it from a list of allocated clusters.
+
+Positional param:
+
+`<cluster_id>`
+:   The ID of the cluster as returned by clusters_info.
+
+### add_tags
+
+```bash
+$ mzbench add_tags 50 a,b
+{}
+```
+
+Add tags to a specified benchmark.
+
+Positional param:
+
+`<benchmark_id>`
+:   The ID of the benchmark as returned by [start](#start) or [run](#run).
+`<tags>`
+:   Comma-separated tag list.
+
+### remove_tags
+
+```bash
+$ mzbench remove_tags 50 a,b
+{}
+```
+
+Remove tags from a specified benchmark.
+
+Positional param:
+
+`<benchmark_id>`
+:   The ID of the benchmark as returned by [start](#start) or [run](#run).
+`<tags>`
+:   Comma-separated tag list.
+
+### run_command
+
+```bash
+$ mzbench run_command 86 --percent 5 --pool 1 print(\"123\")
+{
+    "status": "ok"
+}
+```
+
+Run BDL statement on a given percent of workers without interrupting the benchmark,
+please note that the code is executed inside current loop and if there is no loop --
+it wont be executed at all.
+
+Positional param:
+
+`<benchmark_id>`
+:   The ID of the benchmark as returned by [start](#start) or [run](#run).
+`<command>`
+:   BDL statement to be executed.
+
+Optional param:
+
+`--percent <value>`
+:   Percent of workers to execute a command, default value is 100.
+`--pool <number>`
+:   Pool number from the top of a script, default value is 1.
 
 
 ## Misc

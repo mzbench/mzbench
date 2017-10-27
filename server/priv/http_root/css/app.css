@@ -134,20 +134,26 @@ ul.nav.bench-nav {
     width: 80px;
 }
 
-.bench-details .table {
+.bench-details {
   margin: 0px;
 }
 
-.bench-details .table>tbody>tr>td,
-.bench-details .table>tbody>tr>th,
-.bench-details .table>tfoot>tr>td,
-.bench-details .table>tfoot>tr>th,
-.bench-details .table>thead>tr>td,
-.bench-details .table>thead>tr>th {
+.bench-details-el {
   padding: 4px;
   line-height: 1;
-  vertical-align: top;
-  border-top: 0px;
+}
+
+.bench-details-hd {
+  padding: 4px 4px 8px 4px;
+  line-height: 1;
+}
+
+.bench-details-key {
+  font-weight: bold;
+}
+
+.restart-button {
+    display: inline-flex;
 }
 
 .reset-query {
@@ -329,6 +335,26 @@ div.log-window pre{
     overflow: auto;
 }
 
+.search-bench-character {
+  visibility: hidden;
+  margin-left: 3px;
+  font-size: 11px;
+}
+
+.bs.bs-selected:hover .search-bench-character {
+  visibility: visible;
+  color: #fafafa;
+}
+
+.bs:hover .search-bench-character {
+  visibility: visible;
+  color: #9c969d;
+}
+
+.bs:hover .search-bench-character:hover {
+  color: #ffcc53;
+}
+
 .favorite-star-character {
   color: #ece6ed;
   cursor: pointer;
@@ -478,4 +504,48 @@ a.Collapsible__trigger {
 
 h4.bench-results {
   word-spacing: 5px;
+}
+
+div.equals {
+  font-size: 24px;
+  padding-left: 28px;
+}
+
+.signed-in-user-table {
+  position: absolute;
+  top: 6px;
+  right: 0px;
+  margin-right: 7%;
+}
+
+.auth-token-modal {
+  padding: 20px;
+}
+
+.modal-sign-in-dialog {
+  width: 250px;
+  margin: 150px auto;
+}
+
+.sign-in-header {
+  text-align: center;
+}
+
+.row.unused input {
+  background-color: #eee;
+}
+
+.btn-unused {
+  background-color: #eee;
+}
+
+.inline-change-input {
+  width: inherit;
+  border: 1px solid #aaa;
+  border-radius: 3px;
+  margin-top: -5px;
+}
+
+.graph-options-link {
+  margin-bottom: 10px;
 }

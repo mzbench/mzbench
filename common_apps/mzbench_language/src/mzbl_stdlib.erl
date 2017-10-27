@@ -9,6 +9,7 @@
          random_list/4,
          random_number/4,
          random_number/5,
+         random_string/4,
          sprintf/5,
          var/4,
          var/5,
@@ -22,7 +23,11 @@
          wait_signal/4,
          wait_signal/5,
          wait_signal/6,
-         dump/4
+         dump/4,
+         concat/5,
+         concat/4,
+         tokens/4,
+         tokens/5
          ]).
 
 -include("mzbl_types.hrl").
@@ -81,6 +86,15 @@ random_binary(State, _Env, _Meta, N) ->
          List :: [integer()].
 random_list(State, _Env, _Meta, N) ->
     {mzb_utility:random_list(N), State}.
+
+-spec random_string(State, Env, Meta, N) -> {String, State}
+    when State :: any(),
+         Env :: [proplists:property()],
+         Meta :: meta(),
+         N :: non_neg_integer(),
+         String :: string().
+random_string(State, _Env, _Meta, N) ->
+    {mzb_utility:random_string(N), State}.
 
 -spec random_number(State, Env, Meta, N) -> {Res, State}
     when State :: any(),
@@ -168,17 +182,22 @@ seq(State, _Env, _Meta, From, To) ->
 resource(State, Env, _Meta, Resource) ->
     {proplists:get_value({resource, Resource}, Env, []), State}.
 
--spec round_robin(State, Env, Meta, [El]) -> {El, State}
+-spec round_robin(State, Env, Meta, L) -> {any(), State}
     when State :: any(),
          Env :: [proplists:property()],
          Meta :: meta(),
-         El :: any().
+         L :: [any()] | non_neg_integer().
+round_robin(State, _Env, Meta, N) when is_integer(N) ->
+    Id = proplists:get_value(worker_id, Meta),
+    PoolId = proplists:get_value(pool_id, Meta) - 1,
+    {((Id + PoolId) rem N) + 1, State};
 round_robin(_State, _Env, _Meta, []) ->
     erlang:error(empty_round_robin_list);
-round_robin(State, _Env, Meta, List) ->
+round_robin(State, _Env, Meta, List) when is_list(List) ->
     Len = erlang:length(List),
     Id = proplists:get_value(worker_id, Meta),
-    {lists:nth((Id - 1) rem Len + 1, List), State}.
+    PoolId = proplists:get_value(pool_id, Meta) - 1,
+    {lists:nth((Id - 1 + PoolId) rem Len + 1, List), State}.
 
 -spec wait_signal(State, Env, Meta, Name) -> {ok, State}
     when State :: any(),
@@ -232,4 +251,46 @@ set_signal(State, _Env, _Meta, Name, Count) ->
 dump(State, _Env, _Meta, Text) ->
     lager:info("~p", [Text]),
     {ok, State}.
+
+-spec concat(State, Env, Meta, Str1, Str2) -> {ResStr, State}
+    when State :: any(),
+         Env :: [proplists:property()],
+         Meta :: meta(),
+         Str1 :: string(),
+         Str2 :: string(),
+         ResStr :: string().
+
+concat(State, _Env, _Meta, Str1, Str2) ->
+    {Str1 ++ Str2, State}.
+
+-spec concat(State, Env, Meta, ListOfStrings) -> {ResStr, State}
+    when State :: any(),
+         Env :: [proplists:property()],
+         Meta :: meta(),
+         ListOfStrings :: [string()],
+         ResStr :: string().
+
+concat(State, _Env, _Meta, ListOfStrings) ->
+    {lists:concat(ListOfStrings), State}.
+
+-spec tokens(State, Env, Meta, Str) -> {ListOfStrings, State}
+    when State :: any(),
+         Env :: [proplists:property()],
+         Meta :: meta(),
+         Str :: string(),
+         ListOfStrings :: [string()].
+
+tokens(State, _Env, _Meta, Str) ->
+    {string:tokens(Str, ", "), State}.
+
+-spec tokens(State, Env, Meta, Str, Separators) -> {ListOfStrings, State}
+    when State :: any(),
+         Env :: [proplists:property()],
+         Meta :: meta(),
+         Str :: string(),
+         Separators :: string(),
+         ListOfStrings :: [string()].
+
+tokens(State, _Env, _Meta, Str, Separators) ->
+    {string:tokens(Str, Separators), State}.
 

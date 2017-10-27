@@ -1,24 +1,28 @@
 language: erlang
 
 otp_release:
+ - 20.0
  - 19.1
  - 18.0
  - 17.1
 
-sudo: false
-
 env:
  - TASK=acceptance-basic-tests
- - TASK=lint
  - TASK=dialyzer
  - TASK=unit-tests
  - TASK=development-with-rsync
  - TASK=http-worker-tests
  - TASK=validate-examples
  - TASK=error-messages
- - TASK=dashboard-tests
  - TASK=acceptance-local-tests
  - TASK=acceptance-migrations-tests
+
+matrix:
+  include:
+  - otp_release: 19.1
+    env: TASK=python-lint
+  - otp_release: 19.1
+    env: TASK=python-tests
 
 addons:
   apt:
@@ -26,12 +30,20 @@ addons:
       - python-virtualenv
       - parallel
       - nodejs
-      - npm
 
 cache:
   directories:
     - $HOME/.cache/pip
     - $HOME/.cache/rebar3
+
+# before_install and install below are only because of erlexec
+before_install:
+- sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+- sudo apt-get update -qq
+
+install:
+- sudo apt-get install -qq g++-4.9
+- export CXX="g++-4.9"
 
 script:
  - virtualenv venv
@@ -39,12 +51,10 @@ script:
  - ./bin/rebar3 update
  - export PROJECTS="node server common_apps/mzbench_language common_apps/mzbench_utils";
  - case "$TASK" in
-     lint) pip install pyflakes && ./bin/lint.py . ;;
+     python-lint) pip install pyflakes && ./bin/lint.py . ;;
+     python-tests) pip install -r requirements.txt && pip install -r acceptance_tests/requirements.txt && ./lib/bdl_utils_test.py ;;
      validate-examples) pip install -r requirements.txt && make -C examples check;;
      error-messages) pip install -r requirements.txt && make -C acceptance_tests/invalid_scripts check;;
-     dashboard-tests) pip install -r requirements.txt &&
-                      cd server/dashboard && npm install &&
-                      ../../bin/mzbench start_server && make -C ../../node local_tgz && node test/start.js;;
      http-worker-tests) pip install -r requirements.txt &&
                        export NODE_COMMIT=`git rev-parse HEAD` &&
                        export MZBENCH_REPO=`pwd` &&

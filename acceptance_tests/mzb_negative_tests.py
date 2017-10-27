@@ -5,7 +5,6 @@ import shlex
 import subprocess
 import sys
 import nose
-import re
 
 dirname = os.path.dirname(os.path.realpath(__file__))
 os.chdir(dirname)
@@ -16,6 +15,7 @@ from mzb_test_utils import run_failing_bench, start_mzbench_server
 
 mzbench_dir = dirname + '/../'
 scripts_dir = mzbench_dir + 'acceptance_tests/scripts/'
+scripts_bdl_dir = mzbench_dir + 'acceptance_tests/scripts.bdl/'
 mzbench_script = mzbench_dir + 'bin/mzbench'
 
 def emulate_crash_test():
@@ -42,7 +42,7 @@ def runtime_error_test():
 
 def env_param_missing_test():
     run_failing_bench(scripts_dir + 'env.erl', env={},
-        expected_log_message_regex=r'''Benchmark result: Unexpected error: {{{var_is_unbound,"pool_size"}''')
+        expected_log_message_regex=r'''Var 'pool_size' is not defined''')
 
 
 def signal_timeout_test():
@@ -56,19 +56,15 @@ def worker_provisioning_fail_test():
         scripts_dir + 'worker_from_git.erl',
         env={'worker_branch': worker_commit,
              'mzbench_repo':  mzbench_repo},
-        expected_log_message_regex=r"Stage 'pipeline - provisioning': failed",
-        check_log_function=lambda log:\
-            "Error: tried to stop mzbench node, but it didn't even start!"\
-            if len(re.findall('mzbench stop', log)) > len(re.findall('mzbench stop; true', log))\
-            else None)
+        expected_log_message_regex=r"Stage 'pipeline - provisioning': failed")
 
 def time_assertions_fail_test():
-    run_failing_bench(scripts_dir + 'time_assertion_fail.erl', env={},
-        expected_log_message_regex=r'''Benchmark result: FAILED.*1 assertions failed.*Assertion: print > 40.*was expected to hold for 40s.*but held for just''')
+    run_failing_bench(scripts_bdl_dir + 'time_assertion_fail.bdl', env={},
+        expected_log_message_regex=r'''Benchmark result: FAILED.*1 assertions failed.*Assertion: \(\(p\*t > 40\) and \(not \(p\*t <= 40\)\)\).*was expected to hold for 40s.*but held for just''')
 
 
 def always_assertions_fail_test():
-    run_failing_bench(scripts_dir + 'always_assertion_fail.erl', env={},
+    run_failing_bench(scripts_bdl_dir + 'always_assertion_fail.bdl', env={},
         expected_log_message_regex=r'\[error\].*Interrupting benchmark because of failed asserts')
 
 

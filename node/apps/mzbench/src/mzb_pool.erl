@@ -78,6 +78,20 @@ handle_cast({start_worker, WorkerScript, Env, Worker, Node, WId}, #s{workers = T
     end,
     {noreply, State};
 
+handle_cast({run_command, PoolNum, Percent, AST}, #s{name = PoolName, workers = Tid} = State) ->
+    DestPool = "pool" ++ integer_to_list(PoolNum),
+    _ = if PoolName == DestPool ->
+            _ = ets:foldl(
+                fun ({Pid, _Ref}, Acc) ->
+                    RandomValue = random:uniform(),
+                    _ = if RandomValue < Percent / 100 ->
+                            Pid ! {run_command, AST};
+                        true -> ok end,
+                    Acc
+                end, [], Tid);
+        true -> ok end,
+    {noreply, State};
+
 handle_cast(Msg, State) ->
     system_log:error("Unhandled cast: ~p", [Msg]),
     {stop, {unhandled_cast, Msg}, State}.
@@ -187,7 +201,7 @@ start_workers(Pool, Env, NumNodes, Offset, #s{} = State) ->
                         WId = (StartingFrom + N) * NumNodes + Offset,
                         worker_start_delay(StartDelay, NumNodes, WId, StartTime),
                         WorkerScript = mzbl_ast:add_meta(Script, [{worker_id, WId}]),
-                        gen_server:cast(Self, {start_worker, WorkerScript, Env, Worker, Node, WId })
+                        gen_server:cast(Self, {start_worker, WorkerScript, [{"worker_id", WId}|Env], Worker, Node, WId })
                     end, Numbers)
     end,
 
@@ -223,7 +237,7 @@ eval_worker_number(Pool, Env, NumNodes, Offset) ->
                 [S, PN] when PN * Offset > S -> 0;
                 [S, PN] when NumNodes * PN >= S -> S;
                 [S, PN] ->
-                    system_log:error("Need more nodes, required = ~p, actual = ~p", 
+                    system_log:error("Need more nodes, required = ~p, actual = ~p",
                         [mzb_utility:int_ceil(S/PN), NumNodes]),
                     erlang:error({not_enough_nodes})
             end,
@@ -273,19 +287,23 @@ sleep_off(StartTime, ShouldBe) ->
     timer:sleep(Sleep).
 
 worker_start_delay(undefined, _, _, _) -> ok;
-worker_start_delay(#operation{name = poisson, args = [#constant{value = Lambda, units = rps}]}, Factor, _, _) ->
+worker_start_delay(#operation{name = poisson, args = [Rate]}, Factor, _, _) ->
     % The time between each pair of consecutive events has an exponential
     % distribution with parameter λ and each of these inter-arrival times
     % is assumed to be independent of other inter-arrival times.
     % (http://en.wikipedia.org/wiki/Poisson_process)
+    #constant{value = Lambda, units = rps} = mzbl_literals:convert(Rate),
     SleepTime = -(1000*Factor*math:log(random:uniform()))/Lambda,
     timer:sleep(erlang:round(SleepTime));
-worker_start_delay(#operation{name = linear, args = [#constant{value = RPS, units = rps}]}, _, WId, StartTime) ->
-    sleep_off(StartTime, (WId * 1000) div RPS);
-worker_start_delay(#operation{name = pow, args = [Y, W, #constant{value = T, units = ms}]}, _, WId, StartTime) ->
+worker_start_delay(#operation{name = linear, args = [Rate]}, _, WId, StartTime) ->
+    #constant{value = RPS, units = rps} = mzbl_literals:convert(Rate),
+    sleep_off(StartTime, trunc((WId * 1000) / RPS));
+worker_start_delay(#operation{name = pow, args = [Y, W, Time]}, _, WId, StartTime) ->
+    #constant{value = T, units = ms} = mzbl_literals:convert(Time),
     sleep_off(StartTime, erlang:round(T*(math:pow(WId/W, 1/Y))));
 worker_start_delay(#operation{name = exp, args = [_, _]}, _, 0, _) -> ok;
-worker_start_delay(#operation{name = exp, args = [X, #constant{value = T, units = ms}]}, _, WId, StartTime) ->
+worker_start_delay(#operation{name = exp, args = [X, Time]}, _, WId, StartTime) ->
+    #constant{value = T, units = ms} = mzbl_literals:convert(Time),
     sleep_off(StartTime, erlang:round(T*(math:log((WId+1)/X) + 1))).
 
 msnow() ->

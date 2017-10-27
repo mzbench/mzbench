@@ -1,6 +1,6 @@
 In MZBench, scenarios are .bdl files written in a special DSL (domain specific language). BDL stands for Benchmark Definition Language. Think of it as a simple ident-based (like python) language with a small set of instructions and measurement units.
 
-MZBench test scenarios consist of function calls and multi-line statements. Function name is *identifier*. Indetifier is lower-case letter sequence with numbers and underscore which starts from letter. Function could accept positional arguments or key arguments. Position arguments are values, key arguments are values with values, for example:
+MZBench test scenarios consist of function calls and multi-line statements. Function name is *identifier*. Indetifier is lower-case letter sequence with numbers and underscore which starts from letter. Function could accept positional arguments or key arguments. Position arguments are values, key arguments are keys with values, for example:
 
 ```python
 multiline(param1 = 10, param2 = 20):
@@ -18,7 +18,7 @@ Some statements only appear at the top level of a scenario. They're called *top-
 
 # Directives
 
-**Directives** prepare the system for the benchmark and clean it up after it. This includes installing an external [worker](../workers.md) on test nodes, registering resource files, checking conditions, and executing shell commands before and after the test.
+**Directives** prepare the system for the benchmark and clean up after. It includes installing an external [worker](../workers.md) on test nodes, registering resource files, checking conditions, and executing shell commands before and after the test.
 
 ## Top-Level Directives
 
@@ -70,12 +70,12 @@ See [Environment Variables](#environment-variables) for additional information.
 
 ```python
 include_resource(<ResourceName>, "<FileName>", <Type>)
-include_resource(<ResourceName>, "<FileURL>", <Type>)`
+include_resource(<ResourceName>, "<FileURL>", <Type>)
 ```
 
 Register a [resource file](#resource-files) as `<ResourceName>`.
 
-If the file is on your local machine, put it in the same directory where you invoke `mzbench run`.
+If the file is on your local machine, put it in the same directory where your scenario is.
 
 **`<Type>`** is one of the following atoms:
 
@@ -115,18 +115,18 @@ Run actions before and after the benchmark. Two kinds of actions are supported: 
 
 **Exec commands** let you to run any shell command on all nodes or only on the director node.
 
-**Worker calls** are functions defined by the worker. They can be executed only on the director node. Worker calls are used to update the [environment variables](#environment-variables) used in the benchmark.
+**Worker calls** are functions defined by the worker. They can be executed only on the director node. Worker calls are used to update the [environment variables](#environment-variables) used in the benchmark. An example is available in dummy_worker [code](https://github.com/machinezone/mzbench/blob/master/node/apps/dummy_worker/src/dummy_worker.erl#L30).
 
 ### assert
 
 ```python
-assert(always, <Condition>)
-assert(<Time>, <Condition>)
+assert(always, <Expression>)
+assert(<Time>, <Expression>)
 ```
 
-Check if the condition `<Condition>` is satisfied throughout the entire benchmark or at least for the amount of time [`<Time>`](#time_1).
+Check if the condition `<Expression>` is satisfied throughout the entire benchmark or at least for the amount of time [`<Time>`](#time_1).
 
-`<Condition>` is a comparison of two value and is defined as a tuple `<Operand1> <Operation> <Operand2>`.
+`<Expression>` is a logical expression composed of conditions `<Operand1> <Operation> <Operand2>` with binary (and, or), unary (not) logical operators and parenthesis.
 
 `<Operation>` is one of four atoms:
 
@@ -142,16 +142,25 @@ Check if the condition `<Condition>` is satisfied throughout the entire benchmar
 `>=`
 :   Greater than or equal to.
 
-`<Operand1>` and `<Operand2>` are the values to compare. They can be integers, floats, or *metrics* values.
+`==`
+:   Equal to.
+
+`!=`
+:   Not equal to.
+
+`<Operand1>` and `<Operand2>` are the values to compare. They can be integers, floats, or *metrics* wildcards.
 
 [Metrics](../workers.md#metrics) are numerical values collected by the worker during the benchmark. To get the metric value, put its name between double quotation marks:
 
 ```python
-"http_ok" > 20
+("h*k" > 20) and (not "http_ok" > 100)
 ```
 
-The `http_ok` metric is provided by the [simple_http](https://github.com/machinezone/mzbench/blob/master/workers/simple_http/src/simple_http_worker.erl) worker. This condition passes if the number of successful HTTP responses is greater than 20.    
+The `http_ok` metric is provided by the [simple_http](https://github.com/machinezone/mzbench/blob/master/workers/simple_http/src/simple_http_worker.erl) worker. This condition passes if the number of successful HTTP responses is greater than 20.
 
+When multiple metrics are matched against wildcard, condition is checked for every matched metric.
+
+Please note that signals are automatically converted to gauges and could be also used for asserts.
 
 # Pools
 
@@ -176,7 +185,7 @@ The first param in the `pool` statement is a list of *pool options*.
 *required*
 
 ```python
-size = <NumberOfJobs>`
+size = <NumberOfJobs>
 ```
 
 How many times you want the pool executed.
@@ -195,7 +204,7 @@ worker_type = <WorkerName>
 ```
 
 The worker that provides statements for the jobs.
-    
+
 !!!hint
     A pool uses exactly one worker. If you need multiple workers in the benchmark, just write a pool for each one.
 
@@ -210,7 +219,7 @@ worker_start = pow(<Exponent>, <Scale>, <Time>)
 ```
 
 Start the jobs with a given rate:
-    
+
 `linear`
 :   Constant rate [`<Rate>`](#rate_1), e.g. 10 per minute.
 
@@ -224,10 +233,8 @@ Start the jobs with a given rate:
 
 `pow`
 :   Start jobs with rate growing as a [power function](https://en.wikipedia.org/wiki/Power_function) with the exponent `<Exponent>` and the scale factor `<Scale>`:
-    
-    *Scale × Time<sup>Exponent</sup>*
 
-You can customize and combine rates:
+    *Scale × Time<sup>Exponent</sup>*
 
 ### ramp
 
@@ -257,7 +264,8 @@ loop(time = <Time>,
      rate = <Rate>,
      parallel = <N>,
      iterator = <Name>,
-     spawn = <Spawn>):
+     spawn = <Spawn>,
+     while = <Condition>):
     <Statement1>
     <Statement2>
     ...
@@ -277,7 +285,7 @@ You can put loops inside loops. Here's a nested loop that sends HTTP GET request
 loop(time = 30 sec,
      rate = 10 rpm,
      iterator = "i"):
-        loop(time = 3 sec, 
+        loop(time = 3 sec,
              rate = var("i") rps):
                 get("http://google.com")
 ```
@@ -290,10 +298,10 @@ The difference between these two examples is that in the first case the rate is 
 ### time
 
 *required*
-    
+
 ```python
 time = <Time>
-``` 
+```
 
 Run the loop for [`<Time>`](#time_1).
 
@@ -319,6 +327,9 @@ Start jobs with rate [`<Rate>`](#rate_1) for a second, then sleep for [`<Time>`]
 parallel = <N>
 ```
 
+!!!hint
+    When parallel loop starts, all workers copy initial thread state. When loop ends all state copies but first are ommited. This note also applies to `spawn` mode below.
+
 Run `<N>` iterations of the loop in parallel.
 
 ### iterator
@@ -337,6 +348,15 @@ spawn = (true|false)
 
 If `true`, every iteration runs in a separate, spawned process. Default is `false`.
 
+### while
+
+```python
+while = <Condition>
+```
+
+Run this loop while condition is specified. Condition is some metric name compared with `<`, `>`, `<=`, `>=` and `==`. For example `"print" < 10`. The syntax is similar to [asserts](#assert). Please note that metrics are updated once in a 10 seconds (by default), if you set condition for print being less than 10 it does not guarantee print to be equal to 11 after the loop. In this case, "print" could be any number greater than 10 depending on how fast is your loop.
+
+Loop conditions are different from global asserts in a two aspects: there is no time-limiting for loop ones and they do not terminate the entire worker thread. If loop assert is not satisfied, your script won't be `failed`.
 
 # Resource Files
 
@@ -466,9 +486,11 @@ random_number(<Min>, <Max>)
 random_number(<Max>)
 ```
 
-Return a random number between `<Min>` and `<Max>`, including `<Min>` and not including `<Max>`.
+Return a random positive integer between `<Min>` and `<Max>`, including `<Min>` and not including `<Max>`.
 
 `random_number(<Max>)` is equivalent to `random_number(0, <Max>)`
+
+`random_number` functions use a `crypto` Erlang library to generate random numbers, see [Erlang documentation](http://erlang.org/doc/man/crypto.html) if you need more info.
 
 ### random_list
 
@@ -558,12 +580,22 @@ Pause the current job for [`<Time>`](#time_1).
 
 # Conventions
 
-## Time
+## Multipliers
 
-**`<Time>`** is a tuple `{<Duration>, (ms|sec|min|h)}`:
+Every numerical constant could be followed by a multiplier letter `K`, `M`, `G` or `T`. They correspond to 10^3, 10^6, 10^9 and 10^12 respectively.
 
 ```python
-1 sec` # one second
+1.1K # 1100
+2.3M # 2300000
+0.5G # 500000000
+```
+
+## Time
+
+**`<Time>`** is a tuple `<Duration> (ms|sec|min|h)`:
+
+```python
+1 sec # one second
 10 min # 10 minutes
 0.5 h # half hour
 ```
@@ -574,7 +606,7 @@ Pause the current job for [`<Time>`](#time_1).
 **`<Rate>`** is a tuple `<N> (rps|rpm|rph)`:
 
 ```python
-10 rps # 10 jobs per second
+10K rps # 10000 jobs per second
 12 rpm # 12 jobs per minute
-100 h # 100 jobs per hour
+100 rph # 100 jobs per hour
 ```

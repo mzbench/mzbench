@@ -7,6 +7,7 @@ import TimelineFilter from './TimelineFilter.react';
 import Duration from './Duration.react';
 import LoadingSpinner from './LoadingSpinner.react';
 import MZBenchRouter from '../utils/MZBenchRouter'
+import MZBenchActions from '../actions/MZBenchActions';
 
 class Timeline extends React.Component {
     constructor(props) {
@@ -67,6 +68,15 @@ class Timeline extends React.Component {
                 <a href={link}>
                     <span className="glyphicon glyphicon-remove-sign"></span> Clear search query and pagination
                 </a>
+            </div>
+        );
+    }
+
+    renderDiskWarnIfNeeded() {
+        if (this.state.isDiskFree) return null;
+        return (
+            <div className="alert alert-warning" role="alert">
+                Low disk space, currently <b>{this.state.diskLeftKB} KB</b> left.
             </div>
         );
     }
@@ -152,6 +162,7 @@ class Timeline extends React.Component {
             <div>
                 <TimelineFilter filter={this.state.filter} dashboardMode={this.state.dashboardMode}/>
                 {this.renderClearSearchQueryIfNeeded()}
+                {this.renderDiskWarnIfNeeded()}
                 {this.renderNewIfNeeded()}
                 {this.renderTimeline()}
                 <nav>
@@ -182,6 +193,8 @@ class Timeline extends React.Component {
             newName: store.getNew().name,
             isTimelineLoading: store.isShowTimelineLoadingMask(),
             dashboardMode : dashboardMode,
+            isDiskFree: GlobalStore.isDiskFree(),
+            diskLeftKB: GlobalStore.diskLeftKB(),
             isLoaded: true
         };
     }

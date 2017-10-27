@@ -1,5 +1,6 @@
 import React from 'react';
 import moment from 'moment';
+import PropTypes from 'prop-types';
 
 class Duration extends React.Component {
     constructor(props) {
@@ -32,8 +33,12 @@ class Duration extends React.Component {
     }
 
     _calculate(bench) {
-        const lastActiveTime = bench.isRunning() ? moment() : bench.finish_time_client;
-        return lastActiveTime.diff(bench.start_time_client);
+        if (bench.start_time_client) {
+            const lastActiveTime = bench.isRunning() ? moment() : bench.finish_time_client;
+            return lastActiveTime.diff(bench.start_time_client);
+        } else {
+            return 0;
+        }
     }
 
 
@@ -49,7 +54,7 @@ class Duration extends React.Component {
 };
 
 Duration.propTypes = {
-    bench: React.PropTypes.object.isRequired
+    bench: PropTypes.object.isRequired
 };
 
 export default Duration;

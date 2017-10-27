@@ -50,7 +50,7 @@ def add_indents(text):
 
             if comma != None and char == comma:
                 comma = None
-            elif char in ['"', "'"]:
+            elif char in ['"', "'"] and comma is None:
                 comma = char
 
             if comma == None:
@@ -108,23 +108,25 @@ def substitute(ir, env):
 
 def transform(ast):
     if ast.expr_name == "number":
-        if ast.text[-1] in "KMG":
+        if ast.text[-1] in "KMGT":
             num = ast.text[0:-1]
             if ast.text[-1] == "K":
                 mult = 1000
             elif ast.text[-1] == "M":
                 mult = 1000000
-            else:
+            elif ast.text[-1] == "G":
                 mult = 1000000000
+            else:
+                mult = 1000000000000
         else:
             num = ast.text
-            mult = 1 
+            mult = 1
         return [float(num)*mult] if "." in num else [int(num)*mult]
     elif ast.expr_name == "boolean":
         return [ast.text=="true"]
     elif ast.expr_name == "string":
-        return [ast.text[1:-1]] # "something"
-    elif ast.expr_name == "atom": 
+        return [ast.text[1:-1].replace(r'\"', '"').replace(r'\\\\', '\\\\')] # "something"
+    elif ast.expr_name == "atom":
         return [ast.text]
     else:
         lis = reduce(lambda a, x: a + transform(x), ast.children, [])
@@ -155,10 +157,15 @@ def lex(text):
     map = "(" _ kv (_ "," _ kv)* _ ")"
     list = ( _ "[" _ term (_ "," _ term)* _ "]" ) / ( _ "[" _ "]")
     kv = term _ "=" _ term _
-    term = unumber / logic_op / single / list / string / atom / number
-    logic_op = (string / number) _ ("<=" / ">=" / "<" / ">" / "==") _ (string / number)
-    string = '"' ~'[^"]*' '"'
-    number = ~"[0-9]+(\.[0-9]+)?(e\-?[0-9]+)?[GKM]?"
+    term = unumber / logic_exp / single / list / string / atom / number
+    logic_exp = logic_priority / logic_unary / logic_plain
+    logic_priority = "(" _ logic_exp _ ")" _ (logic_binary _ logic_exp _)*
+    logic_unary = "not" _ logic_exp _
+    logic_binary = "and" / "or"
+    logic_plain = logic_op _ (logic_binary _ logic_exp _)*
+    logic_op = (single / string / number) _ ("<=" / ">=" / "<" / ">" / "==" / "!=" / "<>" / "/=") _ (single / string / number)
+    string = '"' ~r'(\\\\.|[^\\\\"])*' '"'
+    number = ~"[0-9]+(\.[0-9]+)?(e\-?[0-9]+)?[GKMT]?"
     unumber = (number / single) _ atom
     """)
     try:

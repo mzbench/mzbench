@@ -25,11 +25,12 @@ const defaultData = {
                      "pool(size = 3, # three execution \"threads\"\n" +
                      "     worker_type = dummy_worker):\n" +
                      "        loop(time = 5 min, # total loop time\n" +
-                     "             rate = 1 rps): # one rps for every worker, 3 rps totally\n" +
+                     "             rate = numvar(\"loop_rate\") rps): # one rps for every worker, 3 rps totally\n" +
                      "            print(\"FOO\") # this operation prints \"FOO\" to console\n",
         nodes: "1",
+        exclusive: "",
         cloud: "",
-        env: {}},
+        env: [{name: "loop_rate", value: "1", id: 1}]},
     selectedBenchId: undefined,
     isShowTimelineLoadingMask: false,
     activeTab: undefined,
@@ -41,7 +42,11 @@ let data = jQuery.extend(true, {}, defaultData); // extend is used to copy objec
 
 class Bench {
     constructor(props) {
+        let newEnv = [];
+        let currentId = 1;
         Object.assign(this, props);
+        Object.keys(props.env).map((key) => newEnv.push({name: key, value: props.env[key], id: currentId++}));
+        this.env = newEnv;
     }
 
     isRunning() {
@@ -55,8 +60,20 @@ class Bench {
         return true;
     }
 
+    get create_time_client() {
+        if (this.create_time) {
+            return moment(this.create_time).add(data.server_date_diff);
+        } else {
+            return undefined;
+        }
+    }
+
     get start_time_client() {
-        return moment(this.start_time).add(data.server_date_diff);
+        if (this.start_time) {
+            return moment(this.start_time).add(data.server_date_diff);
+        } else {
+            return undefined;
+        }
     }
 
     get finish_time_client() {
@@ -88,7 +105,7 @@ class BenchStore extends EventEmitter {
     updateItem(bench) {
         let existBench = this.findById(bench.id);
         if (existBench) {
-            Object.assign(existBench, bench);
+            Object.assign(existBench, new Bench(bench));
         } else {
             data.benchmarks.unshift(new Bench(bench));
         }
@@ -163,11 +180,11 @@ class BenchStore extends EventEmitter {
     }
 
     resetNew() {
-        data.newBench = Object.assign({}, defaultData.newBench);
+        data.newBench = jQuery.extend(true, {}, defaultData.newBench);
     }
 
     cloneNewBench(id) {
-        data.newBench = Object.assign({}, this.findById(data.selectedBenchId)); 
+        data.newBench = jQuery.extend(true, {}, this.findById(data.selectedBenchId));
     }
 
     isShowTimelineLoadingMask() {
@@ -276,7 +293,7 @@ _BenchStore.dispatchToken = Dispatcher.register((action) => {
             break;
 
         case ActionTypes.CLONE_BENCH:
-            data.newBench = Object.assign({}, data.benchmarks.find(x => x.id == action.data));
+            data.newBench = jQuery.extend(true, {}, data.benchmarks.find(x => x.id == action.data));
             data.selectedBenchId = undefined;
             data.isNewSelected = true;
             data.isNewActive = true;
@@ -285,7 +302,7 @@ _BenchStore.dispatchToken = Dispatcher.register((action) => {
             break;
 
         case ActionTypes.CLEAN_NEW_BENCH:
-            data.newBench = Object.assign({}, defaultData.newBench);
+            data.newBench = jQuery.extend(true, {}, defaultData.newBench);
             if (data.clouds.length > 0) {
                 data.newBench.cloud = data.clouds[0];
             }
@@ -311,4 +328,3 @@ _BenchStore.dispatchToken = Dispatcher.register((action) => {
         default:
     }
 });
-

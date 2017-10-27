@@ -1,11 +1,12 @@
 -module(mzb_metrics).
 
--export([start_link/2,
+-export([start_link/4,
          declare_metric/5,
          declare_metrics/1,
          local_declare_metrics/1,
          notify/2,
          get_value/1,
+         get_by_wildcard/1,
          get_local_values/1,
          final_trigger/0,
          get_failed_asserts/0,
@@ -33,8 +34,10 @@
     previous_counter_values = [] :: [{string(), non_neg_integer()}],
     last_rps_calculation_time = undefined :: erlang:timestamp(),
     asserts = [] :: [map()],
+    loop_assert_metrics = [],
     active = true :: true | false,
     metric_groups = [],
+    env = [],
     update_interval_ms :: undefined | integer(),
     assert_accuracy_ms :: undefined | integer(),
     histograms = []
@@ -45,8 +48,8 @@
 %%% API
 %%%===================================================================
 
-start_link(Env, Nodes) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Env, Nodes], [{spawn_opt, [{priority, high}]}]).
+start_link(Asserts, LoopAssertMetrics, Nodes, Env) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Asserts, LoopAssertMetrics, Nodes, Env], [{spawn_opt, [{priority, high}]}]).
 
 notify({Name, counter}, Value) ->
     mz_counter:notify(Name, Value);
@@ -65,7 +68,10 @@ declare_metric(Group, Title, Name, Type, Opts) ->
         ]).
 
 declare_metrics(Groups) ->
-    mzb_interconnect:call_director({declare_metrics, Groups}).
+    case mzb_metrics_cache:check_cached_declare(Groups) of
+        true -> ok;
+        false -> mzb_interconnect:call_director({declare_metrics, Groups})
+    end.
 
 local_declare_metrics(Groups) ->
     gen_server:call(?MODULE, {declare_metrics, Groups}).
@@ -75,6 +81,14 @@ get_value(Metric) ->
     catch
         _:Error -> erlang:error({badarg, Metric, Error})
     end.
+
+get_by_wildcard(Wildcard) ->
+    Regexp = mzb_string:wildcard_to_regexp(Wildcard),
+    ets:foldl(fun({Name, _, Value}, A) -> 
+        case re:run(Name, Regexp) of
+            nomatch -> A;
+            _ -> [{Name, Value} | A]
+        end end, [], ?MODULE).
 
 final_trigger() ->
     gen_server:call(?MODULE, final_trigger, infinity).
@@ -93,10 +107,9 @@ get_histogram_data() ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([Env, Nodes]) ->
+init([Asserts, LoopAssertMetrics, Nodes, Env]) ->
     {ok, UpdateIntervalMs} = application:get_env(mzbench, metric_update_interval_ms),
     _ = ets:new(?MODULE, [set, protected, named_table]),
-    Asserts = mzb_asserts:init(proplists:get_value(asserts, Env, undefined)),
     erlang:send_after(UpdateIntervalMs, self(), trigger),
     StartTime = os:timestamp(),
     _ = random:seed(StartTime),
@@ -106,11 +119,13 @@ init([Env, Nodes]) ->
         start_time = StartTime,
         previous_counter_values = [],
         last_rps_calculation_time = StartTime,
-        asserts = Asserts,
+        asserts = mzbl_asserts:init(Asserts),
+        loop_assert_metrics = lists:map(fun mzb_string:wildcard_to_regexp/1, LoopAssertMetrics),
         active = true,
         metric_groups = [],
+        env = Env,
         update_interval_ms = UpdateIntervalMs,
-        assert_accuracy_ms = round(UpdateIntervalMs * 1.5)
+        assert_accuracy_ms = round(UpdateIntervalMs * 3)
         }}.
 
 handle_call({declare_metrics, Groups}, _From, #s{metric_groups = OldGroups} = State) ->
@@ -131,7 +146,7 @@ handle_call(final_trigger, _From, State) ->
     {reply, ok, NewState};
 
 handle_call(get_failed_asserts, _From, #s{asserts = Asserts, assert_accuracy_ms = AccuracyMs} = State) ->
-    {reply, mzb_asserts:get_failed(_Finished = true, AccuracyMs, Asserts), State};
+    {reply, mzbl_asserts:get_failed(_Finished = true, AccuracyMs, Asserts), State};
 
 handle_call(get_metrics, _From, #s{metric_groups = Groups} = State) ->
     {reply, Groups, State};
@@ -181,8 +196,9 @@ tick(#s{last_tick_time = LastTick} = State) ->
             State2 = evaluate_derived_metrics(State1),
             State3 = check_assertions(TimeSinceTick, State2),
             State4 = check_signals(State3),
-            ok = report_metrics(),
-            State4#s{last_tick_time = Now}
+            State5 = check_dynamic_deadlock(State4),
+            ok = report_metrics(State5),
+            State5#s{last_tick_time = Now}
     end.
 
 aggregate_metrics(#s{nodes = Nodes, metric_groups = MetricGroups, histograms = Histograms} = State) ->
@@ -206,7 +222,6 @@ aggregate_metrics(#s{nodes = Nodes, metric_groups = MetricGroups, histograms = H
             ({N, V, gauge})   -> global_set(N, gauge, V)
         end, Aggregated),
 
-
     NewHistograms = lists:foldl(
         fun ({{Name, histogram}, DataList}, Acc) ->
                 Ref = proplists:get_value(Name, Acc),
@@ -228,20 +243,34 @@ evaluate_derived_metrics(#s{metric_groups = MetricGroups} = State) ->
     lists:foreach(fun ({Name, derived, #{resolver:= Resolver, worker:= {Provider, Worker}} = Opts}) ->
         Args = mzb_bc:maps_get(resolver_args, Opts, []),
         try Provider:apply(Resolver, Args, Worker) of
+            undefined -> ok; % nothing was calculated
             Val -> global_set(Name, gauge, Val)
         catch
             _:Reason -> system_log:error("Failed to evaluate derived metrics:~nWorker: ~p~nFunction: ~p~nReason: ~p~nStacktrace: ~p~n", [Worker, Resolver, Reason, erlang:get_stacktrace()])
         end
     end, DerivedMetrics),
-    system_log:info("[ metrics ] Current metrics values:~n~s", [format_global_metrics()]),
+    system_log:debug("[ metrics ] Current metrics values:~n~s", [format_global_metrics()]),
     NewState.
 
-check_assertions(TimePeriod, #s{asserts = Asserts, assert_accuracy_ms = AccuracyMs} = State) ->
-    system_log:info("[ metrics ] CHECK ASSERTIONS:"),
-    NewAsserts = mzb_asserts:update_state(TimePeriod, Asserts),
-    system_log:info("Current assertions:~n~s", [mzb_asserts:format_state(NewAsserts)]),
+check_dynamic_deadlock(#s{} = State) ->
+    Blocked = global_get("blocked.workers"),
+    if Blocked == 0 -> State;
+        true ->
+            WorkerMetrics = [{lists:reverse(N), V} || {"workers.pool" ++ _ = N, counter, V} <- global_metrics()],
+            Started = lists:sum([V || {"detrats" ++ _, V} <- WorkerMetrics]), % "started" reversed
+            Ended = lists:sum([V || {"dedne" ++ _, V} <- WorkerMetrics]), % "ended" reversed
+            if Blocked >= Started - Ended -> mzb_director:notify({assertions_failed, dynamic_deadlock});
+                true -> ok
+            end,
+            State
+    end.
 
-    FailedAsserts = mzb_asserts:get_failed(_Finished = false, AccuracyMs, NewAsserts),
+check_assertions(TimePeriod, #s{asserts = Asserts, assert_accuracy_ms = AccuracyMs, env = Env} = State) ->
+    system_log:info("[ metrics ] CHECK ASSERTIONS:"),
+    NewAsserts = mzbl_asserts:update_state(TimePeriod, Asserts, Env),
+    system_log:info("Current assertions:~n~s", [mzbl_asserts:format_state(NewAsserts)]),
+
+    FailedAsserts = mzbl_asserts:get_failed(_Finished = false, AccuracyMs, NewAsserts),
     case FailedAsserts of
         [] -> ok;
         _  ->
@@ -264,8 +293,13 @@ check_signals(#s{nodes = Nodes} = State) ->
         end, lists:usort([erlang:node()] ++ Nodes)),
     GroupedSignals = groupby(lists:flatten(RawSignals)),
     Signals = [{N, lists:max(Counts)} || {N, Counts} <- GroupedSignals],
+    _ = [signal_to_metric(N, Value) || {N, Value} <- Signals],
     system_log:info("List of currently registered signals:~n~s", [format_signals_count(Signals)]),
     State.
+
+signal_to_metric(Name, Value) when is_atom(Name) ->
+    signal_to_metric(atom_to_list(Name), Value);
+signal_to_metric(Name, Value) -> global_set(Name, gauge, Value).
 
 format_global_metrics() ->
     Metrics = global_metrics(),
@@ -429,8 +463,15 @@ flatten_exometer_metrics(BenchMetrics) ->
     FlattenMetrics = lists:flatten(BenchMetrics),
     lists:flatten([get_exometer_metrics(M) || M <- FlattenMetrics]).
 
-report_metrics() ->
-    [mzb_metric_reporter:report(Name, Value) || {Name, _, Value} <- global_metrics()],
+report_metrics(#s{loop_assert_metrics = MetricRegexpList, nodes = Nodes}) ->
+    GlobalMetrics = global_metrics(),
+    GlobalFiltered = lists:filter(fun ({Nm, _, _}) -> lists:any(
+        fun (X) -> case re:run(Nm, X) of
+            nomatch -> false;
+            _ -> true
+        end end, MetricRegexpList) end, GlobalMetrics),
+    [mzb_interconnect:abcast(Nodes, {cache_metric, Name, Value}) || {Name, _, Value} <- GlobalFiltered, Value /= undefined],
+    [mzb_metric_reporter:report(Name, Value) || {Name, _, Value} <- GlobalMetrics, Value /= undefined],
     ok.
 
 datapoints(histogram) -> [min, max, mean, 50, 75, 90, 95, 99, 999];
@@ -454,5 +495,3 @@ global_inc(Name, Type, Value) ->
 
 global_set(Name, Type, Value) ->
     ets:insert(?MODULE, {Name, Type, Value}).
-
-

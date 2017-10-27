@@ -46,5 +46,10 @@ export default keyMirror({
     DASHBOARD_CREATED: null,
     DASHBOARD_SAVED: null,
     BENCHSET: null,
-    SUBSCRIBE_METRICS: null
+    SUBSCRIBE_METRICS: null,
+    AUTH_REQ: null,
+    AUTHENTICATED: null,
+    AUTH_ERROR: null,
+    AUTH_TOKEN_EXPIRED: null,
+    GENERATED_TOKEN: null
 });

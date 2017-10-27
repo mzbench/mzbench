@@ -11,9 +11,47 @@ Here's how you install and configure MZBench for real-life use.
 
 # Installation
 
+## From RPM and Pip
+
+Available for CentOS 7 and Amazon Linux.
+
+Requirement:
+
+ - [Pip]((https://pip.pypa.io/en/stable/)) Python package manager
+
+Download MZBench RPM from [Github releases page](https://github.com/machinezone/mzbench/releases)
+
+```bash
+# Install RPM
+sudo yum install -y <rpm_file_downloaded_from_github_releases>
+
+# Install Python package
+sudo pip install mzbench_api_client
+
+# Start the server
+mzbench start_server
+```
+
+MZBench server from RPM has all [Github workers](https://github.com/machinezone/mzbench/tree/master/workers) bundled.
+If you need to add a worker to this installation, please use `mzbench add_worker <tgz_file>`
+command. Please refer to ["How to write your own worker"](workers.md#how-to-write-a-worker)
+guide to learn more about generation of this tarball.
+
+## From Docker container
+
+Docker is a container platform, more information is available at its [website](https://www.docker.com/). If you have Docker up and running, use the following command to start MZBench server:
+
+```bash
+docker run -d -p 4800:80 --name mzbench_server docker.io/ridrisov/mzbench
+```
+
+After that, open http://localhost:4800/ to see the dashboard. Sources for this docker image are available on [github](https://github.com/machinezone/mzbench/tree/master/docker).
+
+## From sources
+
 Requirements:
 
- - [Erlang R17](http://www.erlang.org)
+ - [Erlang R17+](http://www.erlang.org)
  - C++ compiler (preinstalled on most UNIX-based systems)
  - [Python](https://www.python.org) 2.6 or 2.7
  - [Pip]((https://pip.pypa.io/en/stable/)) Python package manager
@@ -21,10 +59,10 @@ Requirements:
 Install and start the MZBench API server:
 
 ```bash
-# Clone the current MZBench source code:
+# Clone the current MZBench source code
 git clone https://github.com/machinezone/mzbench.git
 
-# Install Python requirements:
+# Install Python requirements
 sudo pip install -r mzbench/requirements.txt
 
 # Start the server
@@ -87,7 +125,7 @@ List of [cloud plugins](cloud_plugins.md) that can be used to allocate nodes. On
 
 **`<PluginName>`** is an atom identifying a plugin instance.
 
-**`<ModuleName>`** is the name of the plugin module. Each module has its specific **`<Options>`**. 
+**`<ModuleName>`** is the name of the plugin module. Each module has its specific **`<Options>`**.
 
 There are four built-in plugins:
 
@@ -98,7 +136,7 @@ There are four built-in plugins:
 :   Allocates hosts from a static pool.
 
 [mzb_dummycloud_plugin](cloud_plugins.md#dummy)
-:   Dummy provider, doesn't really do anything, but can be used as a reference during [cloud plugin development](cloud_plugins.md#how-to-write-a-cloud-plugin).
+:   Dummy provider, treats localhost as unlimited number of hosts, useful for debug. It can be also used as a reference during [cloud plugin development](cloud_plugins.md#how-to-write-a-cloud-plugin).
 
 [mzb_multicloud_plugin](cloud_plugins.md#multicloud)
 :   Allocate hosts from multiple sources with the given ratio.
@@ -110,14 +148,14 @@ There are four built-in plugins:
 {network_interface, "<ip address>"}
 ```
 
-Specify the IP address for the dashboard to run on. By default it's `"127.0.0.1"`, so the dashboard is unavailable for external connections. 
+Specify the IP address for the dashboard to run on. By default it's `"127.0.0.1"`, so the dashboard is unavailable for external connections.
 
 To open the dashboard to the public, set this param to `"0.0.0.0"`.
 
 !!!warning
-    MZBench provides no authentication. Opening the dashboard to the public makes your server vulnerable.
-    
-    To protect your server, use an external auth proxy server like Nginx.
+    By default MZBench provides no authentication. Opening the dashboard to the public makes your server vulnerable.
+
+    To protect your server, please, see [authentication](deployment.md#authentication) and [protocol](deployment.md#protocol).
 
 
 ### listen_port
@@ -142,6 +180,66 @@ By default protocol is set to `http`, but `https` is also available. MZBench gen
 ```
 
 CA certificate is not required unless you use custom CA.
+
+### authentication
+
+API server supports Google and GitHub auth.
+
+ - To create Google credentials open [Google API manager page](https://console.developers.google.com). Click Credentials -> Create credentials -> OAuth Client ID -> Web Application, then specify your server URL. Copy `client_id` and `client_secret` to a following structure.
+
+```erlang
+{user_authentication,
+         [
+          {"google", [{caption, "Google"},
+                      {client_id, "..."},
+                      {client_secret, "..."},
+                      {redirect_url, "http://localhost:4800"}]}
+         ]
+     }
+```
+
+`http://localhost:4800` should be replaced with your server's address.
+
+ - To create GitHub credentials open [GitHub developer application](https://github.com/settings/developers) page. Click Register New Application. Put your server url to "Homepage URL" and "Authorization callback URL" and click "Register application".
+
+```erlang
+{user_authentication,
+         [
+          {"github", [{caption, "GitHub"},
+                      {client_id, "..."},
+                      {client_secret, "..."}]}
+         ]
+     }
+```
+
+If GitHub Enterprise is used it may be usefull to add the following two parameters:
+
+```erlang
+    {url, "https://<GitHub URL>"},
+    {api_url, "https://<GitHub API URL>"},
+```
+
+After successful setup you will be able to authorize yourself at dashboard and create tokens for Command Line Utilities (CLI). To create one hover your name at top-right corner of the dashboard and click "Generate token" link.
+When token is generated it should be saved in ~/.config/mzbench/token file. If multiple mzbench servers are used token file could be organized the following way:
+
+```
+<Server1> <Token1>
+<Server2> <Token2>
+<Server3> <Token3>
+...
+```
+
+#### access_lists
+
+It is possible to specify white and black user lists in a following way:
+
+```erlang
+    {admin_list, ["*@mydomain-admins.com", "root@mydomain.com"]},
+    {black_list, ["hacker*", "single-hacker@mydomain.com"]},
+    {white_list, ["tester*@mydomain.com", "single-tester@mydomain.com"]},
+```
+
+Administrators have privileges to stop any benchmark. Blacklisted users have no access. If white list is used, all users, except this list have no access.
 
 ### bench_log_file
 

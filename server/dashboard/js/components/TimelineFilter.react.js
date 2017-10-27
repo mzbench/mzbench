@@ -2,6 +2,7 @@ import React from 'react';
 import MZBenchRouter from '../utils/MZBenchRouter';
 import MZBenchActions from '../actions/MZBenchActions';
 import BenchStore from '../stores/BenchStore';
+import PropTypes from 'prop-types';
 
 class TimelineFilter extends React.Component {
     constructor(props) {
@@ -16,7 +17,6 @@ class TimelineFilter extends React.Component {
         }
     }
 
-//                                    <a role="button" className="btn btn-info" href="#/dashboard" title="Turn on dashboard mode"><span className="glyphicon glyphicon-dashboard"></span></a>
     render() {
         let placeholder = this.props.dashboardMode ? "Search Dashboards" : "Search Benchmarks";
         return (
@@ -31,6 +31,7 @@ class TimelineFilter extends React.Component {
                                     <a role="button" className="btn btn-success" href="#/dashboard/new"><span className="glyphicon glyphicon-plus"></span></a>
                                 </div>) :
                                 (<div className="input-group-btn">
+                                    <a role="button" className="btn btn-info" href="#/dashboard" title="Turn on dashboard mode"><span className="glyphicon glyphicon-dashboard"></span></a>
                                     <a role="button" className="btn btn-success" href="#/new"><span className="glyphicon glyphicon-plus"></span></a>
                                 </div>)
                         }
@@ -62,9 +63,9 @@ class TimelineFilter extends React.Component {
 };
 
 TimelineFilter.propTypes = {
-    filter: React.PropTypes.string,
-    dashboardMode: React.PropTypes.bool,
-    autoSearchInterval: React.PropTypes.number
+    filter: PropTypes.string,
+    dashboardMode: PropTypes.bool,
+    autoSearchInterval: PropTypes.number
 };
 
 TimelineFilter.defaultProps = {

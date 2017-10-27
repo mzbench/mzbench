@@ -12,14 +12,16 @@ import sys
 import re
 import requests
 import multipart
+import string
 
 class MZBenchAPIException(Exception):
     pass
 
 def start(host, script_file, script_content,
           node_commit = None, nodes = None, workers_per_node = None, deallocate_after_bench = None,
-          provision_nodes = None, exclusive_node_usage = None, benchmark_name = None,
-          cloud = None, tags = None, emails=[], includes=[], env={}, no_cert_check = False
+          provision_nodes = None, benchmark_name = None,
+          cloud = None, tags = None, emails=[], includes=[], env={}, no_cert_check = False,
+          exclusive = None
         ):
     """Starts a bench
 
@@ -39,8 +41,6 @@ def start(host, script_file, script_content,
     :type deallocate_after_bench: "true" or "false"
     :param provision_nodes: Install required software
     :type provision_nodes: "true" or "false"
-    :param exclusive_node_usage: Allocate exclusive nodes if allocator supports this mode
-    :type exclusive_node_usage: "true" or "false"
     :param benchmark_name: Set benchmark name
     :type benchmark_name: str or unicode
     :param cloud: Specify cloud provider to use
@@ -49,6 +49,8 @@ def start(host, script_file, script_content,
     :type tags: str
     :param no_cert_check: Don't check server HTTPS certificate
     :type no_cert_check: boolean
+    :param exclusive: Exclusive label
+    :type exclusive: str or unicode
     :param emails: Emails to notify on bench results
     :type emails: List of strings
     :param env: Dictionary of environment variables to substitute
@@ -82,14 +84,14 @@ def start(host, script_file, script_content,
         params += [('deallocate_after_bench', deallocate_after_bench)]
     if provision_nodes is not None:
         params += [('provision_nodes', provision_nodes)]
-    if exclusive_node_usage is not None:
-        params += [('exclusive_node_usage', exclusive_node_usage)]
     if benchmark_name is not None:
         params += [('benchmark_name', benchmark_name)]
     if cloud is not None:
         params += [('cloud', cloud)]
     if tags is not None:
         params += [('tags', tags)]
+    if exclusive is not None:
+        params += [('exclusive', exclusive)]
     if node_commit is not None:
         params += [('node_commit', node_commit)]
 
@@ -184,6 +186,33 @@ def change_env(host, bench_id, env, no_cert_check = False):
     """
     env['id'] = bench_id
     return assert_successful_get(host, '/change_env', env, no_cert_check = no_cert_check)
+
+def run_command(host, bench_id, pool, percent, bdl_command, no_cert_check = False):
+    """Executes worker operation on a given percent of a pool on the fly
+
+    :param host: MZBench API server host with port
+    :type host: str
+    :param bench_id: benchmark run id
+    :type bench_id: int
+    :param pool: pool number from the top of the script, starting from 1
+    :type pool: int
+    :param percent: percent of workers 0 < percent <= 100
+    :type percent: int
+    :param command: BDL statement to be executed
+    :type command: string
+    :param no_cert_check: Don't check server HTTPS certificate
+    :type no_cert_check: boolean
+    """
+    import bdl_utils
+    bdl_utils.convert("#!benchDL\n" + bdl_command, {}) # To check syntax
+
+    return assert_successful_get(
+        host,
+        '/run_command',
+        {'id': bench_id,
+         'pool': pool,
+         'percent': percent,
+         'command': bdl_command}, no_cert_check = no_cert_check)
 
 
 def data(host, bench_id, no_cert_check = False):
@@ -331,7 +360,7 @@ def stream_lines(host, endpoint, args, no_cert_check = False):
     try:
         response = requests.get(
             addproto(host) + endpoint + '?' + urlencode(args),
-            stream=True, verify = not no_cert_check)
+            stream=True, verify = not no_cert_check, headers=get_auth_headers(host))
 
         for line in fast_iter_lines(response, chunk_size=1024):
             try:
@@ -402,7 +431,7 @@ def assert_successful_request(perform_request):
 def assert_successful_get(host, endpoint, args, no_cert_check = False):
     return requests.get(
         addproto(host) + endpoint + '?' + urlencode(args),
-        verify=not no_cert_check)
+        verify=not no_cert_check, headers=get_auth_headers(host))
 
 
 @assert_successful_request
@@ -410,6 +439,44 @@ def assert_successful_post(host, endpoint, args, data=None, headers=None, no_cer
     return requests.post(
         addproto(host) + endpoint + '?' + urlencode(args),
         data=data,
-        headers=headers,
+        headers=add_auth_headers(headers, host),
         verify=not no_cert_check)
 
+def add_auth_headers(headers, host):
+    auth_headers = get_auth_headers(host);
+    if (headers is None):
+        return auth_headers;
+
+    if (auth_headers is None):
+        return headers;
+
+    headers.update(auth_headers)
+    return headers
+
+def get_auth_headers(host):
+    token = read_token(host)
+    if (token is not None):
+        return {"Authorization": "Bearer {}".format(string.rstrip(token, " \n\r"))}
+    else:
+        return None
+
+def read_token(host):
+    if 'MZBENCHTOKEN' in os.environ:
+        token_file = os.environ['MZBENCHTOKEN']
+    else:
+        token_file = os.path.expanduser("~/.config/mzbench/token")
+
+    if (not os.path.isfile(token_file)):
+        return None
+
+    with open(token_file) as f:
+        s = f.read()
+        for line in s.split('\n'):
+            line_no_comments = line.split('#', 1)[0]
+            strtokens = line_no_comments.split()
+            if len(strtokens) > 1 and host == strtokens[0]:
+                return strtokens[1]
+            if len(strtokens) == 1:
+                return line_no_comments
+
+    return None

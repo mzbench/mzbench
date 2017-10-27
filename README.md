@@ -14,13 +14,47 @@ MZBench is:
 
  - **Cloud-aware:** MZBench can allocates nodes directly from Amazon EC2 or run on a local machine.
  - **Scalable:** tested with 100 nodes and millions of connections.
- - **Extendable:** write your own [cloud plugins](doc/cloud_plugins.md#how-to-write-a-cloud-plugin) and [workers](doc/workers.md#how-to-write-a-worker). 
+ - **Extendable:** write your own [cloud plugins](doc/cloud_plugins.md#how-to-write-a-cloud-plugin) and [workers](doc/workers.md#how-to-write-a-worker).
  - **Open-source:** MZBench is released under the [BSD license](https://github.com/machinezone/mzbench/blob/master/LICENSE).
 
 [Read the docs →](https://machinezone.github.io/mzbench)
 
+## Protocols
+
+Out-of-the-box it supports [HTTP](workers/http), [MySQL](workers/mysql), [PostgreSQL](workers/pgsql), [MongoDB](workers/mongo), [Cassandra](workers/cassandra), [XMPP](workers/xmpp), [AMQP](workers/amqp), [TCP](workers/tcp), [Shell commands execution](workers/exec), [Simplified HTTP](workers/simple_http), and [TCPKali](workers/tcpkali).
+
+Implementing addtional protocols is [not that hard](doc/workers.md#how-to-write-a-worker), but if you want something particular to be implemented — feel free to create an [issue](https://github.com/machinezone/mzbench/issues).
 
 ## Installation
+
+### From RPM and Pip
+
+Available for CentOS 7 and Amazon Linux.
+
+Download MZBench RPM from [Github releases page](https://github.com/machinezone/mzbench/releases)
+
+```bash
+# Install RPM
+sudo yum install -y <rpm_file_downloaded_from_github_releases>
+
+# Install Python package
+sudo pip install mzbench_api_client
+
+# Start the server
+mzbench start_server
+```
+
+### From Docker container
+
+Docker is a container platform, more information is available at its [website](https://www.docker.com/). If you have Docker up and running, use the following command to start MZBench server:
+
+```bash
+docker run -d -p 4800:80 --name mzbench_server docker.io/ridrisov/mzbench
+```
+
+After that, open http://localhost:4800/ to see the dashboard. Sources for this docker image are available on [github](https://github.com/machinezone/mzbench/tree/master/docker).
+
+### From sources
 
 To use MZBench, you'll need:
 
@@ -32,7 +66,7 @@ Download MZBench from GitHub and install Python requirements:
 
 ```bash
 $ git clone https://github.com/machinezone/mzbench
-$ sudo pip install -r mzbench/requirements.txt 
+$ sudo pip install -r mzbench/requirements.txt
 ```
 
 If you want to use virtualenv (optional) to isolate Python dependencies:
@@ -61,7 +95,7 @@ When the server is running, launch an example benchmark:
 ```bash
 $ ./bin/mzbench run examples.bdl/ramp.bdl
 {
-    "status": "pending", 
+    "status": "pending",
     "id": 6
 }
 status: running                       00:09
@@ -76,6 +110,6 @@ Go to [localhost:4800](http://localhost:4800) and see the benchmark live status:
 
  - [How to write scenarios →](doc/scenarios/spec.md)
  - [How to control MZBench from command line →](doc/cli.md)
+ - [How to use MZBench dashboard →](doc/dashboard.md)
  - [How to deploy MZBench →](doc/deployment.md)
  - [How to write your own worker →](doc/workers.md#how-to-write-a-worker)
-

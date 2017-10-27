@@ -2,7 +2,7 @@
 
 -export([
     provision_nodes/2,
-    clean_nodes/2,
+    clean_nodes/3,
     ensure_file_content/5,
     ensure_dir/4
 ]).
@@ -52,64 +52,96 @@ provision_nodes(Config, Logger) ->
         io_lib:format("cd ~s && ~s/mzbench/bin/mzbench start", [RootDir, NodeDeployPath]),
         [],
         Logger),
+    NodePids = mzb_subprocess:remote_cmd(
+        UserName,
+        [DirectorHost|WorkerHosts],
+        io_lib:format("cd ~s && ~s/mzbench/bin/mzbench getpid", [RootDir, NodeDeployPath]),
+        [],
+        Logger),
+    InterconnectPorts = mzb_lists:pmap(fun(H) ->
+        [Res] = release_rpcterms(UserName, H, RootDir, "mzb_interconnect_sup", "get_port", Logger),
+        erlang:list_to_integer(Res) end, WorkerHosts),
 
-    {lists:zip(Nodes, [DirectorHost|WorkerHosts]), get_management_port(Config, Logger)}.
+    {lists:zip(Nodes, [DirectorHost|WorkerHosts]), InterconnectPorts, NodePids, get_management_port(Config, Logger)}.
 
 get_management_port(Config = #{director_host:= DirectorHost, user_name:= UserName}, Logger) ->
-    [Res] = mzb_subprocess:remote_cmd(
-                UserName,
-                [DirectorHost],
-                io_lib:format("~s/mzbench/bin/nodetool", [mzb_api_paths:node_deployment_path()]),
-                ["-name", nodename(director_sname(Config), 0), "rpcterms", "mzb_management_tcp_protocol", "get_port", "\\\"\\\""],
-                Logger, []),
+    [Res] = release_rpcterms(UserName, DirectorHost, mzb_api_bench:remote_path("", Config),
+        "mzb_management_tcp_protocol", "get_port", Logger),
     Logger(info, "Management port: ~s", [Res]),
     erlang:list_to_integer(Res).
 
+release_rpcterms(UserName, Host, ConfigPath, Module, Function, Logger) ->
+    mzb_subprocess:remote_cmd(
+        UserName,
+        [Host],
+        io_lib:format("cd ~s && ~s/mzbench/bin/mzbench",
+            [ConfigPath, mzb_api_paths:node_deployment_path()]),
+        ["rpcterms", Module, Function],
+        Logger, []).
+
 % couldn't satisfy both erl 18 and 19 dialyzers, spec commented
 %-spec clean_nodes(#{director_host:=_, purpose:=atom() | binary() | [atom() | [any()] | char()], user_name:=_, worker_hosts:=_, _=>_}, fun((_,_,_) -> any())) -> ok.
-clean_nodes(Config, Logger) ->
+clean_nodes(NodePids, Config, Logger) ->
     #{
         user_name:= UserName,
         director_host:= DirectorHost,
         worker_hosts:= WorkerHosts} = Config,
     RootDir = mzb_api_bench:remote_path("", Config),
-    _ = mzb_subprocess:remote_cmd(
+    Codes = mzb_subprocess:remote_cmd(
         UserName,
         [DirectorHost|WorkerHosts],
-        io_lib:format("cd ~s; ~s/mzbench/bin/mzbench stop; true",
+        io_lib:format("cd ~s; timeout 30s ~s/mzbench/bin/mzbench stop > /dev/null 2>&1; echo $?",
             [RootDir, mzb_api_paths:node_deployment_path()]),
         [],
         Logger),
+    _ = kill_nodes(NodePids, [DirectorHost|WorkerHosts], Codes, UserName, Logger),
     length(RootDir) > 1 andalso mzb_subprocess:remote_cmd(UserName, [DirectorHost|WorkerHosts], io_lib:format("rm -rf ~s", [RootDir]), [], Logger),
     ok.
+
+kill_nodes([], _, _, _, _) -> ok;
+kill_nodes(_, [], _, _, _) -> ok;
+kill_nodes(_, _, [], _, _) -> ok;
+kill_nodes([Pid | NodePids], [H|Hosts], [Code|StopResults], UserName, Logger) ->
+    IsStoppedAlready =
+        try erlang:list_to_integer(Code) of
+            0 -> true;
+            _ -> false
+        catch
+            _:Error ->
+                lager:error("Bad node stop code: ~p~nReason: ~p", [Code, Error]),
+                false
+        end,
+
+    case IsStoppedAlready of
+        false -> mzb_subprocess:remote_cmd(UserName, [H],
+                    io_lib:format("kill -9 ~p; true", [Pid]), [], Logger);
+        true -> ok
+    end,
+    kill_nodes(NodePids, Hosts, StopResults, UserName, Logger).
 
 ntp_check(_, [H], Logger) ->
     Logger(info, "There's only one host, no need to make ntp check", []),
     [{H, 0}];
 ntp_check(UserName, Hosts, Logger) ->
-    MaxTimeDiff = application:get_env(mzbench_api, ntp_max_timediff_s, undefined),
-    try lists:map(fun(X) ->
-        [_, T | _] = lists:reverse(string:tokens(X, " \n")),
-        {F, []} = string:to_float(T), erlang:round(?MICROSEC_IN_SEC*F) end,
-        mzb_subprocess:remote_cmd(UserName, Hosts, "ntpdate -q pool.ntp.org", [], Logger)) of
-        Offsets ->
+    case application:get_env(mzbench_api, ntp_max_timediff_s, undefined) of
+        undefined -> [{H, undefined} || H <- Hosts];
+        MaxTimeDiff ->
+            NTPRes = mzb_subprocess:remote_cmd(UserName, Hosts, "ntpdate -q pool.ntp.org", [], Logger),
+            Offsets = lists:map(
+                    fun(X) ->
+                        [_, T | _] = lists:reverse(string:tokens(X, " \n")),
+                        {F, []} = string:to_float(T),
+                        erlang:round(?MICROSEC_IN_SEC*F)
+                    end, NTPRes),
             TimeDiff = lists:max(Offsets) - lists:min(Offsets),
             Logger(info, "NTP time diffs are: ~p, max distance is ~p microsecond", [Offsets, TimeDiff]),
-            case MaxTimeDiff of
-                undefined -> ok;
-                _  when ?MICROSEC_IN_SEC * MaxTimeDiff >= TimeDiff -> ok;
-                _ ->
+            case ?MICROSEC_IN_SEC * MaxTimeDiff >= TimeDiff of
+                true -> ok;
+                false ->
                     Logger(error, "NTP CHECK FAILED, max time different is ~p microseconds", [TimeDiff]),
                     erlang:error({ntp_check_failed, TimeDiff})
             end,
             lists:zip(Hosts, Offsets)
-    catch
-        _:Error when MaxTimeDiff == undefined ->
-            Logger(error, "NTP check crashed: ~p~n~p", [Error, erlang:get_stacktrace()]),
-            [{H, undefined} || H <- Hosts];
-        _:Error ->
-            Logger(error, "NTP check crashed: ~p~n~p", [Error, erlang:get_stacktrace()]),
-            erlang:error({ntp_call_crashed, Error})
     end.
 
 nodename(Name, N) ->
@@ -167,13 +199,15 @@ director_sname(#{id:= Id}) -> "mzb_director" ++ integer_to_list(Id).
 worker_sname(#{id:= Id})   -> "mzb_worker" ++ integer_to_list(Id).
 
 vm_args_content(NodeName, #{node_log_port:= LogPort, node_management_port:= Port,
-    vm_args:= ConfigArgs, node_log_user_port:= LogUserPort} = Config) ->
+    vm_args:= ConfigArgs, node_log_user_port:= LogUserPort,
+    node_interconnect_port:= InterconnectPort} = Config) ->
     UpdateIntervalMs = mzb_bc:maps_get(metric_update_interval_ms, Config, undefined),
     NewArgs =
         [mzb_string:format("-name ~s", [NodeName]),
          mzb_string:format("-mzbench node_management_port ~b", [Port]),
          mzb_string:format("-mzbench node_log_port ~b", [LogPort]),
-         mzb_string:format("-mzbench node_log_user_port ~b", [LogUserPort])] ++
+         mzb_string:format("-mzbench node_log_user_port ~b", [LogUserPort]),
+         mzb_string:format("-mzbench node_interconnect_port ~b", [InterconnectPort])] ++
         [mzb_string:format("-mzbench metric_update_interval_ms ~b", [UpdateIntervalMs]) || UpdateIntervalMs /= undefined],
 
     io_lib:format(string:join([A ++ "~n" || A <- NewArgs ++ ConfigArgs], ""), []).
@@ -184,7 +218,7 @@ get_host_os_id(UserName, Hosts, Logger) ->
 
 get_host_erts_version(UserName, Hosts, Logger) ->
     Versions = mzb_subprocess:remote_cmd(UserName, Hosts,
-        "erl -noshell -eval 'io:fwrite(\\\"~s\\\", [erlang:system_info(version)]).' -s erlang halt", 
+        "erl -noshell -eval 'io:fwrite(\\\"~s\\\", [erlang:system_info(version)]).' -s erlang halt",
         [], Logger, []),
     [lists:flatten(V) || V <- Versions].
 
@@ -228,25 +262,34 @@ download_file(User, Host, FromFile, ToFile, Logger) ->
     end,
     ok.
 
--spec install_package([string()], string(), install_spec(), string(), term(), fun()) -> ok.
-install_package(Hosts, PackageName, InstallSpec, InstallationDir, Config, Logger) ->
-    Version = case InstallSpec of
+package_version(InstallSpec, Logger) ->
+    case InstallSpec of
         #git_install_spec{repo = Repo, branch = Branch} ->
             mzb_git:get_git_short_sha1(Repo, Branch, Logger);
         #rsync_install_spec{} ->
             {A, B, C} = os:timestamp(),
             mzb_string:format("~p.~p.~p", [A, B, C])
+    end.
+
+-spec install_package([string()], string(), install_spec(), string(), term(), fun()) -> ok.
+install_package(Hosts, PackageName, InstallSpec, InstallationDir, Config, Logger) ->
+    Version = case application:get_env(mzbench_api, auto_update_deployed_code, enable) of
+                enable -> package_version(InstallSpec, Logger);
+                _ -> "someversion"
     end,
     #{user_name:= User} = Config,
-    PackagesDir = mzb_api_paths:tgz_packages_dir(),
-    HostsAndOSs = case InstallSpec of
-        #git_install_spec{build = "local"} -> [{H, "noarch"} || H <- Hosts];
-        _ -> get_host_system_id(User, Hosts, Logger)
+    PackagesDirs = mzb_api_paths:tgz_packages_dirs(),
+    HostsAndOSs = case application:get_env(mzbench_api, custom_os_code_builds, enable) of
+                        enable -> case InstallSpec of
+                                    #git_install_spec{build = "local"} -> [{H, "noarch"} || H <- Hosts];
+                                    _ -> get_host_system_id(User, Hosts, Logger)
+                                end;
+                        _ -> [{H, "someos"} || H <- Hosts]
     end,
-    ok = filelib:ensure_dir(PackagesDir ++ "/"),
+    ok = filelib:ensure_dir(hd(PackagesDirs) ++ "/"),
     UniqueOSs = lists:usort([OS || {_Host, OS} <- HostsAndOSs]),
     NeededTarballs =
-        [{OS, filename:join(PackagesDir, mzb_string:format("~s-~s-~s.tgz", [PackageName, Version, OS]))}
+        [{OS, find_package(PackagesDirs, mzb_string:format("~s-~s-~s.tgz", [PackageName, Version, OS]))}
         || OS <- UniqueOSs],
     MissingTarballs = [{OS, T} || {OS, T} <- NeededTarballs, not filelib:is_file(T)],
     Logger(info, "Missing tarballs: ~p", [MissingTarballs]),
@@ -287,6 +330,16 @@ install_package(Hosts, PackageName, InstallSpec, InstallationDir, Config, Logger
         end,
         HostsAndOSs),
     ok.
+
+find_package(PackagesDirs, PackageName) ->
+    lists:foldl(
+        fun(Dir, LastKnown) ->
+            Current = filename:join(Dir, PackageName),
+            case filelib:is_file(Current) of
+                true -> Current;
+                false -> LastKnown
+            end
+        end, filename:join(hd(PackagesDirs), PackageName), PackagesDirs).
 
 build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger) ->
     DeploymentDirectory = mzb_file:tmp_filename(),
@@ -338,4 +391,3 @@ install_workers(Hosts, #{script:= Script} = Config, Logger, Env) ->
     NormEnv = mzbl_script:normalize_env(Env),
     _ = [install_worker(Hosts, IS, Config, Logger) || IS <- mzbl_script:extract_install_specs(AST, NormEnv)],
     ok.
-

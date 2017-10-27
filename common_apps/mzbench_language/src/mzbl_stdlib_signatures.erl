@@ -19,6 +19,7 @@ is_std_function(random_binary, 1) -> true;
 is_std_function(random_list, 1) -> true;
 is_std_function(random_number, 1) -> true;
 is_std_function(random_number, 2) -> true;
+is_std_function(random_string, 1) -> true;
 is_std_function(sprintf, 2) -> true;
 is_std_function(var, 1) -> true;
 is_std_function(var, 2) -> true;
@@ -33,4 +34,8 @@ is_std_function(wait_signal, 1) -> true;
 is_std_function(wait_signal, 2) -> true;
 is_std_function(wait_signal, 3) -> true;
 is_std_function(dump, 1) -> true;
+is_std_function(concat, 1) -> true;
+is_std_function(concat, 2) -> true;
+is_std_function(tokens, 1) -> true;
+is_std_function(tokens, 2) -> true;
 is_std_function(_, _) -> false.

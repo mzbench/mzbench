@@ -17,6 +17,7 @@ us-west-1       ami-77571c17
 us-east-2       ami-86055fe3
 us-east-1       ami-d0efb2c7
 eu-west-1       ami-ab8ec7d8
+eu-west-2       ami-e2c3d686
 eu-central-1    ami-bdaa52d2
 ap-northeast-1  ami-7a25841b
 ap-northeast-2  ami-99eb3ff7
@@ -41,7 +42,7 @@ sa-east-1       ami-7798101b
 To use one of these images, specify it in the cloud plugin config as `image_id`:
 
 ```erlang
-{image_id, "ami-ee8d718e"
+{image_id, "ami-ee8d718e"}
 ```
 
 You can, of course, build your own image based on the requirements listed above. [Learn more](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/AMIs.html#creating-an-ami) in the official Amazon docs.
@@ -69,12 +70,13 @@ Configuration example:
 
 Minimally, the config requires `instance_spec` and `config` keys specified. Learn more about AWS-specific config in the [erlcloud documentation](https://github.com/gleber/erlcloud).
 
+To make allocated nodes accessible: specify `key_name` in configuration above, put associated key to your MZBench server and make ssh use it. Usually it is about adding `IdentityFile path/to/your/amazonkey.pem` to `~/.ssh/config` or running `ssh-add path/to/your/amazonkey.pem`.
 
 ## Static Cloud
 
 `mzb_staticcloud_plugin`
 
-The module allocated nodes from a list of hosts.
+The module uses allocated nodes from a list of hosts.
 
 Configuration example:
 
@@ -97,6 +99,7 @@ Configuration example:
 {cloud_plugins, [{dummy, #{module => mzb_dummycloud_plugin}}]}
 ```
 
+The main difference between `dummycloud` and `staticcloud` for localhost is that `dummycloud` does not provide node exclusivity. It means that you could run several benchmarks on your localhost simultaneously, which is not supported by `staticcloud`.
 
 ## Multicloud
 
@@ -148,18 +151,18 @@ Cloud plugin is an Erlang module with at least three methods:
 
     `Name`
     :   The name of the particular instance of the plugin specified in the [configuration file](deployment.md#cloud_plugins).
-    
+
     `Opts`
     :   Options passed from the server [configuration file](deployment.md#cloud_plugins) for the particular plugin instance.
-    
+
 `create_cluster`
 :   Allocate the required number of nodes and return a tuple: `{ok, ClusterID, UserName, HostList}`.   
-    
+
     `NumNodes`
     :   Number of nodes to allocate.
-    
+
     `Config`
-    :   Map with keys `user`, `name`, `description`, and `exclusive_node_usage`.
+    :   Map with keys `user`, `name` and `description`.
 
     `ClusterID`
     :   This term will be passed to `destroy_cluster/1` when it's time it deallocate the nodes. Its content is up to the plugin developer.

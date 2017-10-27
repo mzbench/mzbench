@@ -1,6 +1,6 @@
 -module(mzbl_typecheck).
 
--export([check/2, check/3]).
+-export([check/2, check/3, format_error/1]).
 
 -include("mzbl_types.hrl").
 
@@ -56,6 +56,10 @@ check(X, boolean, _) when is_boolean(X) -> true;
 check(L, any, Env) when is_list(L) ->
     all_([check(X, any, Env) || X <- L]);
 check(_, any, _) -> true;
+check(#operation{name = LO, args = [A, B]}, boolean_operation, Env)
+    when (LO == gt) or (LO == gte) or (LO == lt) or (LO == lte) or (LO == eq) ->
+    and_(or_(or_(check(A, integer, Env), check(A, float, Env)), check(A, list, Env)),
+         or_(or_(check(B, integer, Env), check(B, float, Env)), check(B, list, Env)));
 check(X, T, _) -> {false, {X, is_not, T}, undefined}.
 
 -spec check_env(string(), type(), worker_env()) -> typecheck_result().
@@ -102,6 +106,8 @@ check_op(size, [Size], _, Env) ->
 check_op(random_binary, [Size], T, Env) ->
     and_(is(binary, T), check(Size, integer, Env));
 check_op(random_list, [Size], T, Env) ->
+    and_(is(list, T), check(Size, integer, Env));
+check_op(random_string, [Size], T, Env) ->
     and_(is(list, T), check(Size, integer, Env));
 check_op(t, List, T, Env) ->
     and_(is(tuple, T), check(List, list, Env));
@@ -189,6 +195,14 @@ check_op(set_signal, [Name, Count], T, Env) ->
         check(Count, integer, Env)]);
 check_op(dump, [X], T, Env) ->
     and_(is(atom, T), check(X, any, Env));
+check_op(concat, [ListOfStr], _T, Env) ->
+    check(ListOfStr, list, Env);
+check_op(concat, [Str1, Str2], _T, Env) ->
+    and_(check(Str1, string, Env), check(Str2, string, Env));
+check_op(tokens, [Str], _T, Env) ->
+    check(Str, string, Env);
+check_op(tokens, [Str, Separators], _T, Env) ->
+    and_(check(Str, string, Env), check(Separators, string, Env));
 check_op(think_time, [Time, Rate], T, Env) ->
     all_([
         is(rate, T),
@@ -230,6 +244,8 @@ check_loop_spec_element(#operation{name = iterator, args = [Name]}, Env) ->
     check(Name, string, Env);
 check_loop_spec_element(#operation{name = poisson, args = [Flag]}, Env) ->
     check(Flag, boolean, Env);
+check_loop_spec_element(#operation{name = while, args = [Op]}, Env) ->
+    check(Op, boolean_operation, Env);
 check_loop_spec_element(X, _Env) ->
     {false, mzb_string:format("Bad loop spec element ~p", [X]), undefined}.
 
@@ -264,3 +280,13 @@ is(X, T) -> {false, {X, is_not, T}, undefined}.
 add_location(Meta, {false, Reason, undefined}) ->
     {false, Reason, mzbl_script:meta_to_location_string(Meta)};
 add_location(_, X) -> X.
+
+-spec format_error(term()) -> string().
+format_error({X, is_not, Y}) ->
+    mzb_string:format("~p is not ~p", [X, Y]);
+format_error({neither, Reason1, Reason2}) ->
+    mzb_string:format("~s and ~s", [format_error(Reason1), format_error(Reason2)]);
+format_error(Str) when is_list(Str) ->
+    Str;
+format_error(Term) ->
+    mzb_string:format("~p", [Term]).
