@@ -9,7 +9,7 @@
 % Public API
 % ===========================================================
 
-% Possible config: 
+% Possible config:
 % {cloud_plugins,
 %    [{k8s, #{module => mzb_k8s_plugin,
 %             context => "stage.k8s", % optional, will be used from k8s
@@ -48,7 +48,7 @@ create_cluster(PluginOpts, NumNodes, ClusterConfig) when is_integer(NumNodes), N
 
 
     try
-        {ok, _} = create_rc(ID, Image, PodSpec, NumNodes),
+        {ok, _} = create_deployment(ID, Image, PodSpec, NumNodes),
         {ok, PodNames} = wait_pods_creation(Context, Namespace, BenchName, NumNodes, ?MAX_POLL_COUNT),
         lager:info("Pods are created: ~p", [PodNames]),
         wait_pods_start(NumNodes, ID, PodNames, ?MAX_POLL_COUNT),
@@ -67,15 +67,15 @@ create_cluster(PluginOpts, NumNodes, ClusterConfig) when is_integer(NumNodes), N
     end.
 
 destroy_cluster(ID) ->
-    R = delete_rc(ID),
-    lager:info("Destroyed RC: ~p, result: ~p", [ID, R]),
+    R = delete_deployment(ID),
+    lager:info("Destroyed Deployment: ~p, result: ~p", [ID, R]),
     {ok, _} = R,
     ok.
 
 
-%%%%%%%%%%%%%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%
 % Internal API
-%%%%%%%%%%%%%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%
 
 context_arg(undefined) -> [];
 context_arg(Context) -> ["--context", Context].
@@ -83,27 +83,35 @@ context_arg(Context) -> ["--context", Context].
 namespace_arg(undefined) -> [];
 namespace_arg(Namespace) -> ["--namespace", Namespace].
 
-create_rc({Context, Namespace, BenchName}, Image, PodSpec, NumNodes) ->
+create_deployment({Context, Namespace, BenchName}, Image, PodSpec, NumNodes) ->
+    JsonFile = write_json_resource(BenchName),
+    {ok, Binary} = file:read_file(JsonFile),
+
     % Might be a good idea to be able to define these values in the benchmark
     CPU = get_config_value(cpu, PodSpec),
     Memory = get_config_value(memory, PodSpec),
 
     Resources = "cpu=" ++ CPU ++ ",memory=" ++ Memory,
-    Cmd = ["kubectl", "run", BenchName] ++
+
+    Cmd = ["kubectl", "run", BenchName ++ "-worker"] ++
           context_arg(Context) ++
           namespace_arg(Namespace) ++
           ["--labels", "app=mzbench-worker,bench=" ++ BenchName,
            "--image", Image,
            "--replicas", integer_to_list(NumNodes),
            "--requests", Resources,
-           "--limits", Resources,
            "--port", "22",
-           "--generator", "run/v1",
+           "--overrides", "'" ++ binary_to_list(Binary) ++ "'",
+           "--image-pull-policy", "Always",
            "--", "/usr/sbin/sshd", "-D"],
-    run_kubectl(Cmd, false).
+    X = run_kubectl(Cmd, false),
+    io:format("~p~n", [X]),
+    {ok, _} = X,
+    run_kubectl(["kubectl", "wait", context_arg(Context) ++ namespace_arg(Namespace),
+                 "--timeout", "300s", "--for=condition=Ready", "--selector", "bench=" ++ BenchName, "pod"], false).
 
-delete_rc({Context, Namespace, BenchName}) ->
-    Cmd = ["kubectl", "delete", "rc", BenchName] ++
+delete_deployment({Context, Namespace, BenchName}) ->
+    Cmd = ["kubectl", "delete", "deployment", BenchName ++ "-worker"] ++
           context_arg(Context) ++
           namespace_arg(Namespace),
     run_kubectl(Cmd, false).
@@ -177,3 +185,29 @@ get_config_value(Key, PropList) ->
         true -> erlang:error({k8s_error, incorrect_config_value, Key});
         _ -> Value
     end.
+
+write_json_resource(BenchName) ->
+    TmpFile = mzb_file:tmp_filename(),
+    BenchNameBin = list_to_binary(BenchName),
+
+    ExtraPodSpec = #{affinity =>
+                        #{podAntiAffinity =>
+                              #{preferredDuringSchedulingIgnoredDuringExecution =>
+                                    [#{podAffinityTerm =>
+                                           #{labelSelector =>
+                                                 #{matchExpressions =>
+                                                       [#{key => <<"app">>,
+                                                          operator => <<"In">>,
+                                                          values => [<<"mzbench-worker">>]}]},
+                                             topologyKey => <<"kubernetes.io/hostname">>},
+                                       weight => 100}]}}},
+
+    Labels = #{labels => #{app => <<"mzbench-worker">>,
+                             bench => BenchNameBin}},
+    Deployment = #{kind => <<"Deployment">>,
+                   apiVersion => <<"apps/v1">>,
+                   spec => #{template => #{metadata => Labels,
+                                           spec => ExtraPodSpec}}},
+
+    file:write_file(TmpFile, jiffy:encode(Deployment)),
+    TmpFile.
