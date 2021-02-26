@@ -92,6 +92,10 @@ init([Id, Params]) ->
             end,
 
     Tags = mzb_bc:maps_get(tags, Params, []),
+    ProvisionNodes = case Cloud of
+                         k8s -> false;
+                         _ -> maps:get(provision_nodes, Params)
+                     end,
 
     Config = #{
         id => Id,
@@ -106,7 +110,7 @@ init([Id, Params]) ->
         node_install_spec => NodeInstallSpec,
         env => mzbl_script:normalize_env(generate_bench_env(Id, Params)),
         deallocate_after_bench => maps:get(deallocate_after_bench, Params),
-        provision_nodes => maps:get(provision_nodes, Params),
+        provision_nodes => ProvisionNodes,
         req_host => maps:get(req_host, Params),
         initial_user => maps:get(user, Params),
         director_host => undefined,
@@ -726,13 +730,21 @@ run_periodically(StartTime, MaxTime, RetryTimeoutSec, Fn) ->
 allocate_hosts(#{nodes_arg:= N, cloud:= Cloud} = Config, Logger) when is_integer(N), N > 0 ->
     #{id:= BenchId,
       purpose:= Purpose,
-      initial_user:= User} = Config,
+      initial_user:= User,
+      env:= Env} = Config,
     Description = mzb_string:format("MZBench cluster:~n~p", [Config]),
-    ClusterConfig = #{
+    DefaultClusterConfig = #{
         purpose => Purpose,
         user => User,
         description => Description
     },
+    ClusterConfig = case Cloud of
+        k8s -> 
+            NodeImage = proplists:get_value("node_image", Env),
+            DefaultClusterConfig#{node_image => NodeImage};
+        _ -> 
+            DefaultClusterConfig
+    end,
     % Allocate one supplementary node for the director
     Logger(info, "Allocating ~p hosts in ~p cloud...", [N + 1, Cloud]),
     {ok, ClusterId, UserName, Hosts} = mzb_api_cloud:create_cluster(BenchId, Cloud, N + 1, ClusterConfig),

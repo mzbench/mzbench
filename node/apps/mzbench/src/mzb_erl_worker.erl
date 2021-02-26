@@ -1,6 +1,7 @@
 -module(mzb_erl_worker).
 
 -export([
+    add_pathsz/1,
     load/1,
     init/1,
     apply/3,
@@ -70,7 +71,10 @@ apply(F, Args, {Module, State}, Meta) ->
     {Result, {Module, NewState}}.
 
 terminate(Result, {Module, State}) ->
-    apply_if_exists(Module, terminate_state, [Result, State]).
+    case apply_if_exists(Module, terminate_state, [Result, State]) of
+        {ok, R} -> R;
+        {error, not_exists} -> Result
+    end.
 
 apply_if_exists(M, F, A) ->
     case lists:member({F, erlang:length(A)}, M:module_info(exports)) of

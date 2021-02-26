@@ -14,7 +14,7 @@ sys.path.append("../lib")
 
 from util import cmd
 
-from mzb_test_utils import run_successful_bench, restart_bench, start_mzbench_server
+from mzb_test_utils import run_successful_bench, run_failing_bench, restart_bench, start_mzbench_server
 
 mzbench_dir = dirname + '/../'
 scripts_dir = mzbench_dir + 'acceptance_tests/scripts/'
@@ -34,7 +34,7 @@ def worker_from_rsync_test():
 
 def lua_worker_from_git_test():
     worker_commit = os.environ.get('NODE_COMMIT', 'master')
-    mzbench_repo = os.environ.get('MZBENCH_REPO', 'https://github.com/machinezone/mzbench')
+    mzbench_repo = os.environ.get('MZBENCH_REPO', 'https://github.com/satori-com/mzbench')
     env = {'worker_branch': worker_commit,
              'mzbench_repo':  mzbench_repo}
     run_successful_bench(scripts_dir + 'lua_worker_from_git.erl', env=env)
@@ -43,7 +43,7 @@ def lua_worker_from_git_test():
 
 def python_worker_from_git_test():
     worker_commit = os.environ.get('NODE_COMMIT', 'master')
-    mzbench_repo = os.environ.get('MZBENCH_REPO', 'https://github.com/machinezone/mzbench')
+    mzbench_repo = os.environ.get('MZBENCH_REPO', 'https://github.com/satori-com/mzbench')
     env = {'worker_branch': worker_commit,
              'mzbench_repo':  mzbench_repo}
     run_successful_bench(scripts_dir + 'python_worker_from_git.erl', env=env)
@@ -53,7 +53,7 @@ def python_worker_from_git_test():
 def worker_from_git_test():
     # worker is located in the same repo as node
     worker_commit = os.environ.get('NODE_COMMIT', 'master')
-    mzbench_repo = os.environ.get('MZBENCH_REPO', 'https://github.com/machinezone/mzbench')
+    mzbench_repo = os.environ.get('MZBENCH_REPO', 'https://github.com/satori-com/mzbench')
     env = {'worker_branch': worker_commit,
              'mzbench_repo':  mzbench_repo}
     run_successful_bench(scripts_dir + 'worker_from_git.erl', env=env)
@@ -80,7 +80,7 @@ def vars_defaults_test():
     def check_log(log):
         regexp1 = re.compile('the_var1_value_is_var1_default_value', re.DOTALL + re.UNICODE)
         regexp2 = re.compile('the_var2_value_is_var2_new_value', re.DOTALL + re.UNICODE)
-        
+
         if regexp1.search(log) and regexp2.search(log):
             return False
         else:
@@ -350,6 +350,19 @@ def env_change_test():
     print "Datapoints: {0}".format(values)
     assert(0.8 < values[1] < 1.2)
     assert(4.8 < values[4] < 5.2)
+
+
+def terminate_normal_test():
+    run_successful_bench(
+        scripts_dir + 'terminate_check.erl',
+        expected_log_message_regex=r'TERMINATE \[nil,nil\] "test"')
+
+
+def terminate_exception_test():
+    run_failing_bench(
+        scripts_dir + 'terminate_error_check.erl',
+        expected_log_message_regex=r'TERMINATE {error,"something bad happend",.*} "test"')
+
 
 def websocket_available_test():
     from websocket import create_connection

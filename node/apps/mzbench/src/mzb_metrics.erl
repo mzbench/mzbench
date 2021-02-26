@@ -15,7 +15,9 @@
          datapoint2str/1,
          datapoints/1,
          get_metrics/0,
-         get_histogram_data/0]).
+         get_histogram_data/0,
+         subscribe/2,
+         local_subscribe/2]).
 
 -behaviour(gen_server).
 -export([init/1,
@@ -40,7 +42,10 @@
     env = [],
     update_interval_ms :: undefined | integer(),
     assert_accuracy_ms :: undefined | integer(),
-    histograms = []
+    histograms = [],
+    metrics_subscribers = #{} :: #{Metric :: string() => [
+        Callback :: fun((Metric :: string(), Value :: number()) -> ok)
+    ]}
 }).
 
 
@@ -74,7 +79,7 @@ declare_metrics(Groups) ->
     end.
 
 local_declare_metrics(Groups) ->
-    gen_server:call(?MODULE, {declare_metrics, Groups}).
+    gen_server:cast(?MODULE, {declare_metrics, Groups}).
 
 get_value(Metric) ->
     try global_get(Metric)
@@ -103,6 +108,16 @@ get_metrics() ->
 get_histogram_data() ->
     gen_server:call(?MODULE, get_histogram_data).
 
+subscribe(Metric, Callback) when is_function(Callback, 2) ->
+    %% director is supposed to send Metric value back with Ref 
+    %% (which is callback function). Director is not supposed to call
+    %% callback directly.
+    mzb_interconnect:call_director({user_metric_subscribe,
+                                   _Ref = Callback, node(), Metric}).
+
+local_subscribe(Metric, Callback) when is_function(Callback, 2) ->
+    gen_server:call(?MODULE, {local_subscribe, Metric, Callback}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -125,21 +140,9 @@ init([Asserts, LoopAssertMetrics, Nodes, Env]) ->
         metric_groups = [],
         env = Env,
         update_interval_ms = UpdateIntervalMs,
-        assert_accuracy_ms = round(UpdateIntervalMs * 3)
+        assert_accuracy_ms = round(UpdateIntervalMs * 3),
+        metrics_subscribers = #{}
         }}.
-
-handle_call({declare_metrics, Groups}, _From, #s{metric_groups = OldGroups} = State) ->
-    try mzb_script_metrics:normalize(Groups ++ OldGroups) of
-        NewGroups ->
-            mzb_metric_reporter:new_metrics(NewGroups),
-            NewCounters = [N || {N, counter, _} <- extract_metrics(NewGroups)] -- [N || {N, counter, _} <- extract_metrics(OldGroups)],
-            [ mzb_metrics:notify({N, counter}, 0) || N <- NewCounters],
-            {reply, ok, State#s{metric_groups = NewGroups}}
-    catch
-        error:Error ->
-            system_log:error("Metrics declaration error: ~s", [mzb_script_metrics:format_error(Error)]),
-            {reply, {error, Error}, State}
-    end;
 
 handle_call(final_trigger, _From, State) ->
     NewState = tick(State#s{active = false, stop_time = os:timestamp()}),
@@ -154,9 +157,28 @@ handle_call(get_metrics, _From, #s{metric_groups = Groups} = State) ->
 handle_call(get_histogram_data, _From, #s{histograms = Histograms} = State) ->
     {reply, [{N, Bin} || {N, Ref} <- Histograms, {ok, Bin} <- [mz_histogram:export(Ref)]], State};
 
+handle_call({local_subscribe, Metric, Callback}, _From,
+            #s{metrics_subscribers = Subscribers} = State) ->
+    CallbackList = mzb_bc:maps_get(Metric, Subscribers, []),
+    NewSubscribers = maps:put(Metric, [Callback|CallbackList], Subscribers),
+    {reply, ok, State#s{metrics_subscribers = NewSubscribers}};
+
 handle_call(Req, _From, State) ->
     system_log:error("Unhandled call: ~p", [Req]),
     {stop, {unhandled_call, Req}, State}.
+
+handle_cast({declare_metrics, Groups}, #s{metric_groups = OldGroups} = State) ->
+    try mzb_script_metrics:normalize(Groups ++ OldGroups) of
+        NewGroups ->
+            mzb_metric_reporter:new_metrics(NewGroups),
+            NewCounters = [N || {N, counter, _} <- extract_metrics(NewGroups)] -- [N || {N, counter, _} <- extract_metrics(OldGroups)],
+            [ mzb_metrics:notify({N, counter}, 0) || N <- NewCounters],
+            {noreply, State#s{metric_groups = NewGroups}}
+    catch
+        error:Error ->
+            system_log:error("Metrics declaration error: ~s", [mzb_script_metrics:format_error(Error)]),
+            {noreply, State}
+    end;
 
 handle_cast(Msg, State) ->
     system_log:error("Unhandled cast: ~p", [Msg]),
@@ -197,13 +219,16 @@ tick(#s{last_tick_time = LastTick} = State) ->
             State3 = check_assertions(TimeSinceTick, State2),
             State4 = check_signals(State3),
             State5 = check_dynamic_deadlock(State4),
-            ok = report_metrics(State5),
-            State5#s{last_tick_time = Now}
+            State6 = notify_metrics_subscribers(State5),
+            ok = report_metrics(State6),
+
+            MergingTime = timer:now_diff(os:timestamp(), Now) / 1000,
+            global_set("metric_merging_time", gauge, MergingTime),
+
+            State6#s{last_tick_time = Now}
     end.
 
 aggregate_metrics(#s{nodes = Nodes, metric_groups = MetricGroups, histograms = Histograms} = State) ->
-    StartTime = os:timestamp(),
-
     Values = mzb_lists:pmap(
         fun (N) ->
             case mzb_interconnect:call(N, {get_local_metrics_values, extract_metrics(MetricGroups)}) of
@@ -229,10 +254,6 @@ aggregate_metrics(#s{nodes = Nodes, metric_groups = MetricGroups, histograms = H
                 lists:keystore(Name, 1, Acc, {Name, NewRef});
             (_, Acc) -> Acc
         end, Histograms, groupby([{{N,T}, V} || {N, V, T} <- lists:append(Values)])),
-
-    FinishTime = os:timestamp(),
-    MergingTime = timer:now_diff(FinishTime, StartTime) / 1000,
-    global_set("metric_merging_time", gauge, MergingTime),
 
     State#s{histograms = NewHistograms}.
 
@@ -295,6 +316,18 @@ check_signals(#s{nodes = Nodes} = State) ->
     Signals = [{N, lists:max(Counts)} || {N, Counts} <- GroupedSignals],
     _ = [signal_to_metric(N, Value) || {N, Value} <- Signals],
     system_log:info("List of currently registered signals:~n~s", [format_signals_count(Signals)]),
+    State.
+
+notify_metrics_subscribers(#s{metrics_subscribers = Subscribers} = State) ->
+    lists:foldl(
+        fun ({Name, Callbacks}, Acc) ->
+            try global_get(Name) of
+                Value -> [F(Name, Value) || F <- Callbacks]
+            catch
+                error:not_found -> ok
+            end,
+            Acc
+        end, [], maps:to_list(Subscribers)),
     State.
 
 signal_to_metric(Name, Value) when is_atom(Name) ->
