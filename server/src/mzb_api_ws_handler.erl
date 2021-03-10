@@ -484,7 +484,7 @@ apply_update(Fun) ->
             Str =
                 case Exception of
                     {ReasonAtom, ReasonStr} when is_atom(ReasonAtom) -> ReasonStr;
-                    _ -> io_lib:format("~p", [Exception])
+                    _ -> mzb_string:format("~p", [Exception])
                 end,
             mzb_api_firehose:notify(danger, mzb_string:format("~ts", [Str]))
     end.
@@ -657,7 +657,7 @@ get_finals(Pid, StreamId, BenchIds, MetricName, Kind, XEnv) ->
       lists:zip(lists:reverse(lists:seq(1, length(Sorted))),
           lists:map(fun ({_, B}) -> {B, B, B} end, Sorted));
       true -> aggregate(Sorted) end,
-    Values = lists:foldl(fun({X, {Min, Avg, Max}}, Acc) -> [io_lib:format("~p\t~p\t~p\t~p~n", [X, Avg, Min, Max]) |Acc] end, [], Aggregated),
+    Values = lists:foldl(fun({X, {Min, Avg, Max}}, Acc) -> [mzb_string:format("~p\t~p\t~p\t~p~n", [X, Avg, Min, Max]) |Acc] end, [], Aggregated),
     Pid ! {metric_value, StreamId, Values},
     Pid ! {metric_batch_end, StreamId}.
 
@@ -1057,14 +1057,14 @@ perform_subsampling(SubsamplingInterval, LastSentValueTimestamp, PreviousSumForM
 
             case LastRetainedTime of
                 undefined -> {ValueTimestamp, 0, 0, undefined, undefined, [
-                        io_lib:format("~p\t~p\t~p\t~p~n",
+                        mzb_string:format("~p\t~p\t~p\t~p~n",
                             [ValueTimestamp, Value, NewMinValue, NewMaxValue]) | Acc]};
                 Timestamp ->
                     Interval = ValueTimestamp - Timestamp,
                     case Interval < SubsamplingInterval of
                         true -> {LastRetainedTime, SumForMean + Value, NumValuesForMean + 1, NewMinValue, NewMaxValue, Acc};
                         false -> {ValueTimestamp, 0, 0, undefined, undefined,
-                                    [io_lib:format("~p\t~p\t~p\t~p~n",
+                                    [mzb_string:format("~p\t~p\t~p\t~p~n",
                                         [ValueTimestamp, (SumForMean + Value)/(NumValuesForMean + 1), NewMinValue, NewMaxValue]) | Acc]}
                     end
             end

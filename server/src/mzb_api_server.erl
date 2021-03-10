@@ -68,7 +68,7 @@ restart_bench(Id, UserInfo) ->
         {ok, Resp} -> Resp;
         {error, {exception, {C,E,ST}}} -> erlang:raise(C,E,ST);
         {error, not_found} ->
-            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
+            erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])});
         {error, Reason} -> erlang:error(Reason)
     end.
 
@@ -76,7 +76,7 @@ stop_bench(Id) ->
     case gen_server:call(?MODULE, {stop_bench, Id}, infinity) of
         ok -> ok;
         {error, not_found} ->
-            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
+            erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])});
         {error, Reason} ->
             erlang:error(Reason)
     end.
@@ -85,7 +85,7 @@ change_env(Id, Env) ->
     case gen_server:call(?MODULE, {change_env, Id, Env}, infinity) of
         ok -> ok;
         {error, not_found} ->
-            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
+            erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])});
         {error, Reason} ->
             erlang:error(Reason)
     end.
@@ -95,9 +95,9 @@ run_command(Id, Pool, Percent, Command) ->
         [{_, B, undefined}] ->
             mzb_api_bench:run_command(B, Pool, Percent, Command);
         [{_, _, _}] ->
-            erlang:error({badarg, io_lib:format("Benchmark ~p is finished", [Id])});
+            erlang:error({badarg, mzb_string:format("Benchmark ~p is finished", [Id])});
         [] ->
-            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])})
+            erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])})
     end.
 
 status(Id) ->
@@ -107,7 +107,7 @@ status(Id) ->
         [{_, _, Status}] ->
             Status;
         [] ->
-            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])})
+            erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])})
     end.
 
 bench_finished(Id, Status) ->
@@ -117,7 +117,7 @@ is_datastream_ended(Id) ->
     case ets:lookup(benchmarks, Id) of
         [{_, B, _}] when is_pid(B) -> false;
         [{_, _, _Status}] -> true;
-        [] -> erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])})
+        [] -> erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])})
     end.
 
 update_name(Id, NewName) ->
@@ -136,8 +136,8 @@ update_name(Id, NewName) ->
         ok ->
             mzb_api_firehose:update_bench(mzb_api_server:status(Id)),
             ok;
-        {error, not_found} -> erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
-        {error, invalid_benchmark} -> erlang:error({invalid_benchmark, io_lib:format("Benchmark ~p is in invalid state", [Id])})
+        {error, not_found} -> erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])});
+        {error, invalid_benchmark} -> erlang:error({invalid_benchmark, mzb_string:format("Benchmark ~p is in invalid state", [Id])})
     end.
 
 add_tags(Id, Tags) ->
@@ -156,8 +156,8 @@ add_tags(Id, Tags) ->
         ok ->
             mzb_api_firehose:update_bench(mzb_api_server:status(Id)),
             ok;
-        {error, not_found} -> erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
-        {error, invalid_benchmark} -> erlang:error({invalid_benchmark, io_lib:format("Benchmark ~p is in invalid state", [Id])})
+        {error, not_found} -> erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])});
+        {error, invalid_benchmark} -> erlang:error({invalid_benchmark, mzb_string:format("Benchmark ~p is in invalid state", [Id])})
     end.
 
 remove_tags(Id, Tags) ->
@@ -176,8 +176,8 @@ remove_tags(Id, Tags) ->
         ok ->
             mzb_api_firehose:update_bench(mzb_api_server:status(Id)),
             ok;
-        {error, not_found} -> erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])});
-        {error, invalid_benchmark} -> erlang:error({invalid_benchmark, io_lib:format("Benchmark ~p is in invalid state", [Id])})
+        {error, not_found} -> erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])});
+        {error, invalid_benchmark} -> erlang:error({invalid_benchmark, mzb_string:format("Benchmark ~p is in invalid state", [Id])})
     end.
 
 bench_foldl(Fun, AccInit) ->
@@ -274,7 +274,7 @@ email_report(Id, Emails) ->
             erlang:error({badarg, "Benchmark in not ended yet"});
         [{_, _, S}] -> S;
         [] ->
-            erlang:error({not_found, io_lib:format("Benchmark ~p is not found", [Id])})
+            erlang:error({not_found, mzb_string:format("Benchmark ~p is not found", [Id])})
     end,
     case mzb_api_bench:send_email_report(Emails, Status) of
         ok -> ok;
@@ -545,7 +545,7 @@ save_results(Id, Status, State) ->
 write_status(Id, Status, #{data_dir:= Dir}) ->
     Filename = filename:join([Dir, erlang:integer_to_list(Id), "status"]),
     ok = filelib:ensure_dir(Filename),
-    ok = file:write_file(Filename, io_lib:format("~p.", [Status])).
+    ok = file:write_file(Filename, mzb_string:format("~p.", [Status])).
 
 import_data(Dir) ->
     lager:info("Importing server data from ~ts", [Dir]),

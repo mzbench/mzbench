@@ -814,15 +814,15 @@ init_data_dir(Config) ->
 generate_mail_body(Id, Status, Config) ->
     #{env:= Env, script:= Script} = Config,
     #{name := ScriptName, body := ScriptBody} = Script,
-    Subject = io_lib:format("Bench report for ~ts (~ts)", [ScriptName, Status]),
-    Chars = io_lib:format(
+    Subject = mzb_string:format("Bench report for ~ts (~ts)", [ScriptName, Status]),
+    Chars = mzb_string:format(
         "Status: ~ts~n~n"
         "Environment:~n~ts~n~n"
         "Script body:~n~ts~n~n"
         "Benchmark logs:~n  ~ts~n~n"
         "Metrics data:~n  ~ts~n~n",
         [Status,
-         indent(string:join([io_lib:format("~p = ~p", [K,V]) || {K,V} <- Env], "\n"), 2, "(no env variables)"),
+         indent(string:join([mzb_string:format("~p = ~p", [K,V]) || {K,V} <- Env], "\n"), 2, "(no env variables)"),
          indent(ScriptBody, 2),
          bench_log_link(Id, Config),
          bench_data_link(Id, Config)
@@ -830,10 +830,10 @@ generate_mail_body(Id, Status, Config) ->
     {list_to_binary(Subject), list_to_binary(Chars)}.
 
 bench_data_link(Id, #{req_host:= ServerAddr}) ->
-    io_lib:format("http://~ts/data?id=~b", [ServerAddr, Id]).
+    mzb_string:format("http://~ts/data?id=~b", [ServerAddr, Id]).
 
 bench_log_link(Id, #{req_host:= ServerAddr}) ->
-    io_lib:format("http://~ts/logs?id=~b", [ServerAddr, Id]).
+    mzb_string:format("http://~ts/logs?id=~b", [ServerAddr, Id]).
 
 indent("", N, Default) -> indent(Default, N);
 indent(Str, N, _) -> indent(Str, N).
@@ -862,13 +862,13 @@ format_log(_Handler, debug, _Format, _Args) -> ok;
 format_log(Handler, Severity, Format, Args) ->
     Now = {_, _, Ms} = os:timestamp(),
     {_, {H,M,S}} = calendar:now_to_universal_time(Now),
-    _ = Handler({write, io_lib:format("~2.10.0B:~2.10.0B:~2.10.0B.~3.10.0B [~ts] [ API ] ~p " ++ Format ++ "~n", [H, M, S, Ms div 1000, Severity, self()|Args])}),
+    _ = Handler({write, mzb_string:format("~2.10.0B:~2.10.0B:~2.10.0B.~3.10.0B [~ts] [ API ] ~p " ++ Format ++ "~n", [H, M, S, Ms div 1000, Severity, self()|Args])}),
     ok.
 
 format_error(_, {{cmd_failed, Cmd, Code, Output}, _}) ->
-    io_lib:format("Command returned ~b:~n ~ts~nCommand output: ~ts", [Code, Cmd, Output]);
+    mzb_string:format("Command returned ~b:~n ~ts~nCommand output: ~ts", [Code, Cmd, Output]);
 format_error(Op, {E, Stack}) ->
-    io_lib:format("Benchmark has failed on ~p with reason:~n~p~n~nStacktrace: ~p", [Op, E, Stack]).
+    mzb_string:format("Benchmark has failed on ~p with reason:~n~p~n~nStacktrace: ~p", [Op, E, Stack]).
 
 get_env(K) -> application:get_env(mzbench_api, K, undefined).
 
@@ -1011,7 +1011,7 @@ handle_management_msg({error, _}, _, S = #{handlers:= Handlers}) ->
     {ok, S#{handlers => #{}}}.
 
 report_metrics(Name, Timestamp, Value, #{config:= Config, handlers:= Handlers} = S) ->
-    ToWrite = io_lib:format("~B\t~p~n", [Timestamp, Value]),
+    ToWrite = mzb_string:format("~B\t~p~n", [Timestamp, Value]),
     case maps:find(Name, Handlers) of
         {ok, H} -> {H({write, ToWrite}), S};
         error ->

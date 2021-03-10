@@ -22,7 +22,7 @@
 start_interpreter(Module) ->
     {MetricsPipeName, MetricsPipe} = create_fifo(Module),
     PythonExec = os:find_executable("python"),
-    PythonPort = open_port({spawn, io_lib:format("~ts -i", [PythonExec])}, [
+    PythonPort = open_port({spawn, mzb_string:format("~ts -i", [PythonExec])}, [
         {line, 255},
         {env, [
             {"MZ_PYTHON_WORKER_FIFO_NAME", MetricsPipeName}
@@ -44,8 +44,8 @@ start_interpreter(Module) ->
     port_command(PythonPort, "import os\n"),
 
     {ok, WorkerDirs} = application:get_env(mzbench, workers_dirs),
-    WorkersDirsStr = string:join(["'./src'" | [io_lib:format("os.path.expanduser('~ts')", [filename:join(W, Module)]) || W <- WorkerDirs]], ", "),
-    port_command(PythonPort, io_lib:format("sys.path = [~ts] + sys.path\n", [WorkersDirsStr])),
+    WorkersDirsStr = string:join(["'./src'" | [mzb_string:format("os.path.expanduser('~ts')", [filename:join(W, Module)]) || W <- WorkerDirs]], ", "),
+    port_command(PythonPort, mzb_string:format("sys.path = [~ts] + sys.path\n", [WorkersDirsStr])),
 
     port_command(PythonPort, "import traceback\n"),
     port_command(PythonPort, "import mzbench\n"),
@@ -81,7 +81,7 @@ eval(Interpreter, Str) ->
 -spec send_command(python_interpreter(), string(), [term()]) -> term().
 send_command(#python_interpreter{python_port = PythonPort} = Interpreter, CmdTemplate, Args) ->
     Command = mzb_string:format(CmdTemplate, Args),
-    port_command(PythonPort, io_lib:format("try:\n"
+    port_command(PythonPort, mzb_string:format("try:\n"
         "    mzbench._instruction_end(~ts)\n"
         "except:\n"
         "    traceback.print_exc()\n"
@@ -107,7 +107,7 @@ close_fifo(FifoName, FifoPort) ->
 -spec gen_fifo_name(string()) -> string().
 gen_fifo_name(Module) ->
     {N1, N2, N3} = erlang:now(),
-    filename:join(["/", "tmp", io_lib:format("worker_~ts_~b_~b_~b.pipe", [Module, N1, N2, N3])]).
+    filename:join(["/", "tmp", mzb_string:format("worker_~ts_~b_~b_~b.pipe", [Module, N1, N2, N3])]).
 
 skip_port_messages(_Port, 0) -> ok;
 skip_port_messages(Port, N) ->
@@ -175,7 +175,7 @@ read_python_output(#python_interpreter{python_port = PythonPort, metrics_pipe = 
                     end,
                     Str = encode_for_python(Content),
                     LineNum = length(string:tokens(Str, "\n")),
-                    port_command(PythonPort, io_lib:format("~ts~n~b~n~ts~n", [Res, LineNum, Str])),
+                    port_command(PythonPort, mzb_string:format("~ts~n~b~n~ts~n", [Res, LineNum, Str])),
                     read_python_output(Interpreter, PythonAcc, "");
                 {execution_finished, Res} -> Res;
                 {execution_failed, Reason} -> erlang:error({python_statement_failed, Reason});

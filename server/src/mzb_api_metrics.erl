@@ -7,7 +7,7 @@ get_metrics(UserName, DirNode, Host, RemoteScriptPath, RemoteEnvPath) ->
     [Res] = mzb_subprocess:remote_cmd(
               UserName,
               [Host],
-              io_lib:format("~ts/mzbench/bin/metric_names.escript", [mzb_api_paths:node_deployment_path()]),
+              mzb_string:format("~ts/mzbench/bin/metric_names.escript", [mzb_api_paths:node_deployment_path()]),
               [DirNode, RemoteScriptPath, RemoteEnvPath], mzb_api_app:default_logger(), []),
 
     try

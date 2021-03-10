@@ -338,7 +338,7 @@ format_global_metrics() ->
     Metrics = global_metrics(),
     Lines = lists:map(
         fun({Name, _Type, Value}) ->
-            io_lib:format("~ts = ~p", [Name, Value])
+            mzb_string:format("~ts = ~p", [Name, Value])
         end,
         Metrics),
     string:join(Lines, "\n").
@@ -346,7 +346,7 @@ format_global_metrics() ->
 format_signals_count(Signals) ->
     Lines = lists:map(
         fun({Name, Count}) ->
-            io_lib:format("~ts = ~b", [Name, Count])
+            mzb_string:format("~ts = ~b", [Name, Count])
         end,
         Signals),
     string:join(Lines, "\n").

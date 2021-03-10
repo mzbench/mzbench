@@ -89,5 +89,5 @@ format_signal_deadlock_error(Cycle) ->
     mzb_string:format("Deadlock is posible: ~ts", [string:join(FormatedCycle, " -> ")]).
 
 format_vertex({Pool, Op, Arg}) ->
-    io_lib:format("~ts:~ts(~p)", [Pool, Op, Arg]).
+    mzb_string:format("~ts:~ts(~p)", [Pool, Op, Arg]).
 

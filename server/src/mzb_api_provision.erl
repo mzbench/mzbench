@@ -31,7 +31,7 @@ provision_nodes(Config, Logger) ->
 
     catch mzb_subprocess:remote_cmd(
         UserName, UniqHosts,
-        io_lib:format(
+        mzb_string:format(
             "ps -ef | grep beam | grep -v grep | grep -v mzbench_api && ~ts/mzbench/bin/mzbench stop; true",
             [NodeDeployPath]),
         [], Logger),
@@ -50,13 +50,13 @@ provision_nodes(Config, Logger) ->
     _ = mzb_subprocess:remote_cmd(
         UserName,
         [DirectorHost|WorkerHosts],
-        io_lib:format("cd ~ts && ~ts/mzbench/bin/mzbench start", [RootDir, NodeDeployPath]),
+        mzb_string:format("cd ~ts && ~ts/mzbench/bin/mzbench start", [RootDir, NodeDeployPath]),
         [],
         Logger),
     NodePids = mzb_subprocess:remote_cmd(
         UserName,
         [DirectorHost|WorkerHosts],
-        io_lib:format("cd ~ts && ~ts/mzbench/bin/mzbench getpid", [RootDir, NodeDeployPath]),
+        mzb_string:format("cd ~ts && ~ts/mzbench/bin/mzbench getpid", [RootDir, NodeDeployPath]),
         [],
         Logger),
     InterconnectPorts = mzb_lists:pmap(fun(H) ->
@@ -75,7 +75,7 @@ release_rpcterms(UserName, Host, ConfigPath, Module, Function, Logger) ->
     mzb_subprocess:remote_cmd(
         UserName,
         [Host],
-        io_lib:format("cd ~ts && ~ts/mzbench/bin/mzbench",
+        mzb_string:format("cd ~ts && ~ts/mzbench/bin/mzbench",
             [ConfigPath, mzb_api_paths:node_deployment_path()]),
         ["rpcterms", Module, Function],
         Logger, []).
@@ -91,12 +91,12 @@ clean_nodes(NodePids, Config, Logger) ->
     Codes = mzb_subprocess:remote_cmd(
         UserName,
         [DirectorHost|WorkerHosts],
-        io_lib:format("cd ~ts; timeout 30s ~ts/mzbench/bin/mzbench stop > /dev/null 2>&1; echo $?",
+        mzb_string:format("cd ~ts; timeout 30s ~ts/mzbench/bin/mzbench stop > /dev/null 2>&1; echo $?",
             [RootDir, mzb_api_paths:node_deployment_path()]),
         [],
         Logger),
     _ = kill_nodes(NodePids, [DirectorHost|WorkerHosts], Codes, UserName, Logger),
-    length(RootDir) > 1 andalso mzb_subprocess:remote_cmd(UserName, [DirectorHost|WorkerHosts], io_lib:format("rm -rf ~ts", [RootDir]), [], Logger),
+    length(RootDir) > 1 andalso mzb_subprocess:remote_cmd(UserName, [DirectorHost|WorkerHosts], mzb_string:format("rm -rf ~ts", [RootDir]), [], Logger),
     ok.
 
 kill_nodes([], _, _, _, _) -> ok;
@@ -115,7 +115,7 @@ kill_nodes([Pid | NodePids], [H|Hosts], [Code|StopResults], UserName, Logger) ->
 
     case IsStoppedAlready of
         false -> mzb_subprocess:remote_cmd(UserName, [H],
-                    io_lib:format("kill -9 ~p; true", [Pid]), [], Logger);
+                    mzb_string:format("kill -9 ~p; true", [Pid]), [], Logger);
         true -> ok
     end,
     kill_nodes(NodePids, Hosts, StopResults, UserName, Logger).
@@ -176,7 +176,7 @@ ensure_file(UserName, Hosts, LocalPath, RemotePath, Logger) ->
     UserNameParam =
         case UserName of
             undefined -> "";
-            _ -> io_lib:format("~ts@", [UserName])
+            _ -> mzb_string:format("~ts@", [UserName])
         end,
     Logger(info, "[ SCP ] ~ts -> ~ts<HOST>:~ts~n  for ~p", [LocalPath, UserNameParam, RemotePath, Hosts]),
     _ = mzb_lists:pmap(
@@ -216,7 +216,7 @@ vm_args_content(NodeName, #{node_log_port:= LogPort, node_management_port:= Port
          mzb_string:format("-mzbench node_interconnect_port ~b", [InterconnectPort])] ++
         [mzb_string:format("-mzbench metric_update_interval_ms ~b", [UpdateIntervalMs]) || UpdateIntervalMs /= undefined],
 
-    io_lib:format(string:join([A ++ "~n" || A <- NewArgs ++ ConfigArgs], ""), []).
+    mzb_string:format(string:join([A ++ "~n" || A <- NewArgs ++ ConfigArgs], ""), []).
 
 get_host_os_id(UserName, Hosts, Logger) ->
     OSIds = mzb_subprocess:remote_cmd(UserName, Hosts, "uname -sr", [], Logger, []),
@@ -242,7 +242,7 @@ download_file(User, Host, FromFile, ToFile, Logger) ->
             UserNameParam =
                 case User of
                     undefined -> "";
-                    _ -> io_lib:format("~ts@", [User])
+                    _ -> mzb_string:format("~ts@", [User])
                 end,
             % we can't copy to target file directly because there might be several processes doing it
             % instead we copy to tmp file and after that we atomically rename it to target file
@@ -352,7 +352,7 @@ build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger) ->
     case InstallSpec of
         #git_install_spec{repo = GitRepo, branch = GitBranch, dir = GitSubDir} ->
             Cmd = mzb_string:format("git clone ~ts deployment_code && cd deployment_code && git checkout ~ts && cd ./~ts", [GitRepo, GitBranch, GitSubDir]),
-            GenerationCmd = io_lib:format("mkdir -p ~ts && cd ~ts && ~ts "
+            GenerationCmd = mzb_string:format("mkdir -p ~ts && cd ~ts && ~ts "
                                           "&& make generate_tgz && mv *.tgz ~ts",
                                           [DeploymentDirectory, DeploymentDirectory,
                                            Cmd, RemoteTarballPath]),
@@ -362,7 +362,7 @@ build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger) ->
             Cmd = mzb_string:format("rsync -aW --rsync-path='mkdir -p ~ts && rsync' ~ts ~ts/ ~ts",
                 [TargetFolder, string:join(["--exclude=" ++ E || E <- Excludes], " "), Remote, User ++ "@" ++ Host ++ ":" ++ TargetFolder]),
             mzb_subprocess:exec_format(Cmd, [], [], Logger),
-            GenerationCmd = io_lib:format("cd ~ts/~ts && make generate_tgz && mv *.tgz ~ts",
+            GenerationCmd = mzb_string:format("cd ~ts/~ts && make generate_tgz && mv *.tgz ~ts",
                                           [TargetFolder, SubDir, RemoteTarballPath]),
             _ = mzb_subprocess:remote_cmd(User, [Host], GenerationCmd, [], Logger)
     end,
