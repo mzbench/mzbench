@@ -22,7 +22,7 @@ remote_cmd(UserName, Hosts, Executable, Args, Logger, Opts) ->
             [Host] when Host == "localhost"; Host == "127.0.0.1" ->
                 fun (_) ->
                     OrigPath = os:getenv("ORIG_PATH"),
-                    mzb_string:format("bash -c -l \"export PATH='~s'; ~s ~s\"",
+                    mzb_string:format("bash -c -l \"export PATH='~ts'; ~ts ~ts\"",
                         [OrigPath, Executable, string:join(Args2, " ")])
                 end;
             _ ->
@@ -30,14 +30,14 @@ remote_cmd(UserName, Hosts, Executable, Args, Logger, Opts) ->
                     UserNameParam =
                         case UserName of
                             undefined -> "";
-                            _ -> io_lib:format("~s@", [UserName])
+                            _ -> io_lib:format("~ts@", [UserName])
                         end,
-                    mzb_string:format("ssh -A -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ~s~s \"source /etc/profile; ~s ~s\"",
+                    mzb_string:format("ssh -A -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ~ts~ts \"source /etc/profile; ~ts ~ts\"",
                             [UserNameParam, H, Executable, string:join(Args2, " ")])
                 end
         end,
 
-    Logger(info, "[ REMOTE EXEC ] ~s~n  at ~p", [CmdFormater("<HOST>"), Hosts]),
+    Logger(info, "[ REMOTE EXEC ] ~ts~n  at ~p", [CmdFormater("<HOST>"), Hosts]),
 
     try
         mzb_lists:pmap(
@@ -48,7 +48,7 @@ remote_cmd(UserName, Hosts, Executable, Args, Logger, Opts) ->
             end, Hosts)
     catch
         C:{cmd_failed, Cmd, Code, Output} = E:ST ->
-            Logger(error, "[ REMOTE EXEC ] Command execution failed:~nCmd: ~s~nExit code: ~p~nOutput: ~s", [Cmd, Code, Output]),
+            Logger(error, "[ REMOTE EXEC ] Command execution failed:~nCmd: ~ts~nExit code: ~p~nOutput: ~ts", [Cmd, Code, unicode:characters_to_binary(Output)]),
             erlang:raise(C, E, ST);
         C:E:ST ->
             Logger(error, "[ REMOTE EXEC ] Command execution unnormally failed: ~p~nCmd: ~p~nArgs: ~p~nHosts: ~p", [E, Executable, Args, Hosts]),
@@ -56,58 +56,53 @@ remote_cmd(UserName, Hosts, Executable, Args, Logger, Opts) ->
     end.
 
 exec_format(Format, Args, Opts, Logger) ->
-    Handler = fun (eof, Acc) -> lists:flatten(Acc);
-                  (Data, Acc) -> [Acc|Data]
-              end,
-    exec_format(Format, Args, Opts, Logger, Handler, []).
+    exec_format(Format, Args, Opts, Logger, undefined, []).
 
-exec_format(Format, Args, Opts, Logger, Handler, InitState) ->
+exec_format(Format, Args, Opts, Logger, _Handler, InitState) ->
     Command = io_lib:format(Format, Args),
     BeforeExec = os:timestamp(),
-    Logger(info, "[ EXEC ] ~s (~p)", [Command, self()]),
-    Port = open_port({spawn, lists:flatten(Command)}, [stream, eof, exit_status | Opts]),
-    case get_data(Port, Handler, InitState) of
+    Logger(info, "[ EXEC ] ~ts (~p)", [Command, self()]),
+    CmdBin = unicode:characters_to_binary(lists:flatten(Command)),
+    Port = open_port({spawn, CmdBin }, [stream, binary, eof, exit_status | Opts]),
+    case get_data(Port, InitState) of
         {0, Output} ->
             string:strip(Output, right, $\n);
         {Code, Output} ->
             Duration = timer:now_diff(os:timestamp(), BeforeExec),
-            Logger(error, "[ EXEC ] Command execution failed in ~p ms~nCmd: ~s~nExit code: ~p~nOutput: ~s",
+            Logger(error, "[ EXEC ] Command execution failed in ~p ms~nCmd: ~ts~nExit code: ~p~nOutput: ~ts",
                 [Duration / 1000, Command, Code, Output]),
-            erlang:error({cmd_failed, lists:flatten(Command), Code, Output})
+            erlang:error({cmd_failed, CmdBin, Code, Output})
     end.
 
 -type logger() :: any(). % FIXME
 -spec check_output(string(), [any()], [any()], logger()) -> {integer(), string()}.
 check_output(Format, Args, Opts, Logger) ->
-    Handler = fun (eof, Acc) -> lists:flatten(Acc);
-                  (Data, Acc) -> [Acc|Data]
-              end,
     Command = io_lib:format(Format, Args),
     BeforeExec = os:timestamp(),
-    Logger(info, "[ EXEC ] ~s (~p)", [Command, self()]),
-    Port = open_port({spawn, lists:flatten(Command)}, [stream, eof, exit_status | Opts]),
-    {Code, _Output} = Res = get_data(Port, Handler, []),
+    Logger(info, "[ EXEC ] ~ts (~p)", [Command, self()]),
+    Port = open_port({spawn, lists:flatten(Command)}, [stream, eof, exit_status, binary | Opts]),
+    {Code, _Output} = Res = get_data(Port, []),
     Duration = timer:now_diff(os:timestamp(), BeforeExec),
-    Logger(info, "[ EXEC ] Command executed in ~p ms~nCmd: ~s~nExit code: ~p~n",
+    Logger(info, "[ EXEC ] Command executed in ~p ms~nCmd: ~ts~nExit code: ~p~n",
         [Duration / 1000, Command, Code]),
     Res.
 
 
-get_data(Port, Handler, State) ->
+get_data(Port, Acc) ->
     receive
-        {Port, {data, Bytes}} ->
-            get_data(Port, Handler, Handler(Bytes, State));
+        {Port, {data, Binary}} ->
+            get_data(Port, [Binary | Acc]);
         {Port, eof} ->
             Port ! {self(), close},
-            get_data(Port, Handler, State);
+            get_data(Port, Acc);
         stop ->
             Port ! {self(), close},
-            get_data(Port, Handler, State);
+            get_data(Port, Acc);
         {Port, closed} ->
             ExitCode =
                 receive
                     {Port, {exit_status, Code}} -> Code
                 end,
-            {ExitCode, Handler(eof, State)}
+            {ExitCode, unicode:characters_to_list(iolist_to_binary(lists:reverse(Acc)))}
     end.
 

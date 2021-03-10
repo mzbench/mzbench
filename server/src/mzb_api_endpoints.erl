@@ -10,7 +10,7 @@ init(Req, _Opts) ->
         lager:debug("REQUEST: ~p", [Req]),
         Path = cowboy_req:path(Req),
         Method = cowboy_req:method(Req),
-        lager:info("[ ~s ] ~s", [Method, Path]),
+        lager:info("[ ~ts ] ~ts", [Method, Path]),
         UserInfo = authorize(Method, Path, Req),
         handle(Method, Path, UserInfo, Req)
     catch
@@ -552,7 +552,7 @@ parse_start_params(Req) ->
                                     BinaryToValueFun(Value)
                                 catch
                                     _:_ ->
-                                        erlang:error({badarg, io_lib:format("Invalid value \"~s\" for ~s", [Value, ParamName])})
+                                        erlang:error({badarg, io_lib:format("Invalid value \"~ts\" for ~ts", [Value, ParamName])})
                                 end;
                             [] -> DefaultValue
                         end;
@@ -565,7 +565,7 @@ parse_start_params(Req) ->
                                     ListOfBinariesToValueFun(L)
                                 catch
                                     _:_ ->
-                                        erlang:error({badarg, io_lib:format("Invalid value \"~p\" for ~s", [L, ParamName])})
+                                        erlang:error({badarg, io_lib:format("Invalid value \"~p\" for ~ts", [L, ParamName])})
                                 end
                         end
                 end

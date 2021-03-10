@@ -60,10 +60,10 @@ def check_output(*popenargs, **kwargs):
         if cmd is None:
             cmd = popenargs[0]
         error = subprocess.CalledProcessError(retcode, cmd)
-        error.output = "Stdout+Stderr:\n{0}".format(output)
+        error.output = "Stdout+Stderr:\n{0}".format(output.decode('utf-8'))
         print(error.output)
         raise error
-    return output
+    return output.decode('utf-8')
 
 def sudo_cmd(command):
     return cmd('sudo {0}'.format(command))

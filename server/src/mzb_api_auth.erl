@@ -367,7 +367,7 @@ google_tokens(Code, Opts) ->
 
 google_token_info(Type, Token, _Opts) ->
     URL = "https://www.googleapis.com/oauth2/v3/tokeninfo",
-    Data = mzb_string:format("~s=~s", [Type, Token]),
+    Data = mzb_string:format("~ts=~ts", [Type, Token]),
     case httpc:request(post, {URL, [], "application/x-www-form-urlencoded", Data}, [], [], auth_profile) of
         {ok, {{_Version, 200, _ReasonPhrase}, _Headers, Body}}->
             Reply = jiffy:decode(Body, [return_maps]),

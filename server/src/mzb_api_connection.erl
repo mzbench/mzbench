@@ -12,7 +12,7 @@ start_and_link_with(PidToLinkWith, Purpose, Host, Port, Dispatcher, State) ->
         link(PidToLinkWith),
         try gen_tcp:connect(Host, Port, [{active, false}, {packet, 4}, binary]) of
             {ok, Socket} ->
-                lager:info("Connection is started for ~p on ~s", [Purpose, Host]),
+                lager:info("Connection is started for ~p on ~ts", [Purpose, Host]),
                 Self ! {self(), connected, Socket},
                 process_data(Purpose, Host, Socket, Dispatcher, State);
             {error, Reason} ->
@@ -25,10 +25,10 @@ start_and_link_with(PidToLinkWith, Purpose, Host, Port, Dispatcher, State) ->
     receive
         {Pid, connected, Socket} -> {Pid, Socket, Purpose, Host};
         {Pid, failed, Reason} ->
-            lager:error("Connection '~p' is failed to start on host ~s with reason ~p", [Purpose, Host, Reason]),
+            lager:error("Connection '~p' is failed to start on host ~ts with reason ~p", [Purpose, Host, Reason]),
             erlang:error({catch_collector_connect_failed, Host, Reason})
     after 30000 ->
-        lager:error("Connection '~p' is timed-out to start on host ~s", [Purpose, Host]),
+        lager:error("Connection '~p' is timed-out to start on host ~ts", [Purpose, Host]),
         erlang:error({catch_collector_connect_timedout, Host})
     end.
 
@@ -55,9 +55,9 @@ process_data(Purpose, Host, Socket, Dispatcher, State) ->
             {ok, NewState} = Dispatcher({message, Data}, State),
             process_data(Purpose, Host, Socket, Dispatcher, NewState);
         {error, closed} ->
-            lager:info("Connection '~p' is closed on host ~s", [Purpose, Host]),
+            lager:info("Connection '~p' is closed on host ~ts", [Purpose, Host]),
             Dispatcher({error, closed}, State);
         {error, Reason} ->
-            lager:error("Connection '~p' is failed on host ~s with reason ~p", [Purpose, Host, Reason]),
+            lager:error("Connection '~p' is failed on host ~ts with reason ~p", [Purpose, Host, Reason]),
             Dispatcher({error, Reason}, State)
     end.

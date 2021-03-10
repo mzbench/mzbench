@@ -7,8 +7,8 @@
 script_metrics(Pools, _WorkerNodes) ->
 
     WorkerStatusGraphs = lists:map(fun (P) ->
-        {graph, #{title => mzb_string:format("Worker status (~s)", [pool_name(P)]),
-                  metrics => [{mzb_string:format("workers.~s.~s", [pool_name(P), X]), counter} || X <- ["started", "ended", "failed"]]
+        {graph, #{title => mzb_string:format("Worker status (~ts)", [pool_name(P)]),
+                  metrics => [{mzb_string:format("workers.~ts.~ts", [pool_name(P), X]), counter} || X <- ["started", "ended", "failed"]]
                             }}
         end, Pools),
 
@@ -34,7 +34,7 @@ script_metrics(Pools, _WorkerNodes) ->
     catch
         _:Error ->
             ST = erlang:get_stacktrace(),
-            system_log:error("Metrics declaration error: ~s", [mzb_script_metrics:format_error(Error)]),
+            system_log:error("Metrics declaration error: ~ts", [mzb_script_metrics:format_error(Error)]),
             erlang:raise(error, Error, ST)
     end.
 

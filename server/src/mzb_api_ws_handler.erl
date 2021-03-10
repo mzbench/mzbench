@@ -111,7 +111,7 @@ terminate(_Reason, _Req, #state{ref = Ref}) ->
 websocket_handle({text, Msg}, Req, State) ->
     case dispatch_request(jiffy:decode(Msg, [return_maps]), State) of
         {reply, Reply, NewState} ->
-            JsonReply = jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8]),
+            JsonReply = unicode:characters_to_binary(jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8])),
             {reply, {text, JsonReply}, Req, NewState};
         {ok, NewState} ->
             {ok, Req, NewState}
@@ -123,7 +123,7 @@ websocket_handle(_Data, Req, State) ->
 websocket_info(Message, Req, State) ->
     case dispatch_info(Message, State) of
         {reply, Reply, NewState} ->
-            JsonReply = jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8]),
+            JsonReply = unicode:characters_to_binary(jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8])),
             {reply, {text, JsonReply}, Req, NewState};
         {ok, NewState} ->
             {ok, Req, NewState};
@@ -486,7 +486,7 @@ apply_update(Fun) ->
                     {ReasonAtom, ReasonStr} when is_atom(ReasonAtom) -> ReasonStr;
                     _ -> io_lib:format("~p", [Exception])
                 end,
-            mzb_api_firehose:notify(danger, mzb_string:format("~s", [Str]))
+            mzb_api_firehose:notify(danger, mzb_string:format("~ts", [Str]))
     end.
 
 disk_status() ->
@@ -941,7 +941,7 @@ stream_metric(Id, Metric, StreamParams, SendFun) ->
     try
         PollTimeout = application:get_env(mzbench_api, bench_poll_timeout, undefined),
         perform_streaming(Id, FileReader, SendFun, StreamParams#stream_parameters{metric_report_interval_sec = ReportIntervalMs div 1000}, PollTimeout),
-        lager:debug("Streamer for #~b ~s has finished", [Id, Metric])
+        lager:debug("Streamer for #~b ~ts has finished", [Id, Metric])
     after
         FileReader(close)
     end.

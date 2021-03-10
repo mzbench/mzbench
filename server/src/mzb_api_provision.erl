@@ -32,7 +32,7 @@ provision_nodes(Config, Logger) ->
     catch mzb_subprocess:remote_cmd(
         UserName, UniqHosts,
         io_lib:format(
-            "ps -ef | grep beam | grep -v grep | grep -v mzbench_api && ~s/mzbench/bin/mzbench stop; true",
+            "ps -ef | grep beam | grep -v grep | grep -v mzbench_api && ~ts/mzbench/bin/mzbench stop; true",
             [NodeDeployPath]),
         [], Logger),
 
@@ -50,13 +50,13 @@ provision_nodes(Config, Logger) ->
     _ = mzb_subprocess:remote_cmd(
         UserName,
         [DirectorHost|WorkerHosts],
-        io_lib:format("cd ~s && ~s/mzbench/bin/mzbench start", [RootDir, NodeDeployPath]),
+        io_lib:format("cd ~ts && ~ts/mzbench/bin/mzbench start", [RootDir, NodeDeployPath]),
         [],
         Logger),
     NodePids = mzb_subprocess:remote_cmd(
         UserName,
         [DirectorHost|WorkerHosts],
-        io_lib:format("cd ~s && ~s/mzbench/bin/mzbench getpid", [RootDir, NodeDeployPath]),
+        io_lib:format("cd ~ts && ~ts/mzbench/bin/mzbench getpid", [RootDir, NodeDeployPath]),
         [],
         Logger),
     InterconnectPorts = mzb_lists:pmap(fun(H) ->
@@ -68,14 +68,14 @@ provision_nodes(Config, Logger) ->
 get_management_port(Config = #{director_host:= DirectorHost, user_name:= UserName}, Logger) ->
     [Res] = release_rpcterms(UserName, DirectorHost, mzb_api_bench:remote_path("", Config),
         "mzb_management_tcp_protocol", "get_port", Logger),
-    Logger(info, "Management port: ~s", [Res]),
+    Logger(info, "Management port: ~ts", [Res]),
     erlang:list_to_integer(Res).
 
 release_rpcterms(UserName, Host, ConfigPath, Module, Function, Logger) ->
     mzb_subprocess:remote_cmd(
         UserName,
         [Host],
-        io_lib:format("cd ~s && ~s/mzbench/bin/mzbench",
+        io_lib:format("cd ~ts && ~ts/mzbench/bin/mzbench",
             [ConfigPath, mzb_api_paths:node_deployment_path()]),
         ["rpcterms", Module, Function],
         Logger, []).
@@ -91,12 +91,12 @@ clean_nodes(NodePids, Config, Logger) ->
     Codes = mzb_subprocess:remote_cmd(
         UserName,
         [DirectorHost|WorkerHosts],
-        io_lib:format("cd ~s; timeout 30s ~s/mzbench/bin/mzbench stop > /dev/null 2>&1; echo $?",
+        io_lib:format("cd ~ts; timeout 30s ~ts/mzbench/bin/mzbench stop > /dev/null 2>&1; echo $?",
             [RootDir, mzb_api_paths:node_deployment_path()]),
         [],
         Logger),
     _ = kill_nodes(NodePids, [DirectorHost|WorkerHosts], Codes, UserName, Logger),
-    length(RootDir) > 1 andalso mzb_subprocess:remote_cmd(UserName, [DirectorHost|WorkerHosts], io_lib:format("rm -rf ~s", [RootDir]), [], Logger),
+    length(RootDir) > 1 andalso mzb_subprocess:remote_cmd(UserName, [DirectorHost|WorkerHosts], io_lib:format("rm -rf ~ts", [RootDir]), [], Logger),
     ok.
 
 kill_nodes([], _, _, _, _) -> ok;
@@ -146,7 +146,7 @@ ntp_check(UserName, Hosts, Logger) ->
     end.
 
 nodename(Name, N) ->
-    erlang:list_to_atom(mzb_string:format("~s_~b@127.0.0.1", [Name, N])).
+    erlang:list_to_atom(mzb_string:format("~ts_~b@127.0.0.1", [Name, N])).
 
 ensure_vm_args(Hosts, Nodenames, Config, Logger) ->
     _ = mzb_lists:pmap(
@@ -163,32 +163,32 @@ ensure_file_content(Hosts, Content, Filepath,
             "~/" ++ _ -> Filepath;
             _ -> mzb_api_bench:remote_path(Filepath, Config)
         end,
-    Logger(debug, "Ensure file content on hosts: ~p~nLocal filename: ~p~nContent: ~s~nRemote path: ~p", [Hosts, Localfile, Content, Remotefile]),
+    Logger(debug, "Ensure file content on hosts: ~p~nLocal filename: ~p~nContent: ~ts~nRemote path: ~p", [Hosts, Localfile, Content, Remotefile]),
     ok = file:write_file(Localfile, Content),
     ok = ensure_file(UserName, Hosts, Localfile, Remotefile, Logger),
     ok = file:delete(Localfile).
 
 ensure_file(_UserName, [Host], LocalPath, RemotePath, Logger) when Host == "localhost"; Host == "127.0.0.1" ->
-    Logger(info, "[ COPY ] ~s -> ~s", [LocalPath, RemotePath]),
+    Logger(info, "[ COPY ] ~ts -> ~ts", [LocalPath, RemotePath]),
     {ok, _} = file:copy(LocalPath, RemotePath),
     ok;
 ensure_file(UserName, Hosts, LocalPath, RemotePath, Logger) ->
     UserNameParam =
         case UserName of
             undefined -> "";
-            _ -> io_lib:format("~s@", [UserName])
+            _ -> io_lib:format("~ts@", [UserName])
         end,
-    Logger(info, "[ SCP ] ~s -> ~s<HOST>:~s~n  for ~p", [LocalPath, UserNameParam, RemotePath, Hosts]),
+    Logger(info, "[ SCP ] ~ts -> ~ts<HOST>:~ts~n  for ~p", [LocalPath, UserNameParam, RemotePath, Hosts]),
     _ = mzb_lists:pmap(
         fun (Host) ->
-            mzb_subprocess:exec_format("scp -o StrictHostKeyChecking=no ~s ~s~s:~s",
+            mzb_subprocess:exec_format("scp -o StrictHostKeyChecking=no ~ts ~ts~ts:~ts",
                 [LocalPath, UserNameParam, Host, RemotePath], [stderr_to_stdout], fun (_, _, _) -> ok end)
         end, Hosts),
     ok.
 
 -spec ensure_dir(undefined | string(), [string()], string(), fun((atom(), string(), [term()]) -> ok)) -> ok.
 ensure_dir(_User, [Local], Dir, Logger) when Local == "localhost"; Local == "127.0.0.1" ->
-    Logger(info, "[ MKDIR ] ~s", [Dir]),
+    Logger(info, "[ MKDIR ] ~ts", [Dir]),
     % The trailing slash is needed, otherwise it will only
     % create Dir's parent, but not Dir itself
     ok = filelib:ensure_dir(Dir ++ "/");
@@ -208,10 +208,10 @@ vm_args_content(NodeName, #{node_log_port:= LogPort, node_management_port:= Port
         _ -> true
     end,
     NewArgs =
-        [mzb_string:format("-name ~s", [NodeName]),
+        [mzb_string:format("-name ~ts", [NodeName]),
          mzb_string:format("-mzbench node_management_port ~b", [Port]),
          mzb_string:format("-mzbench node_log_port ~b", [LogPort]),
-         mzb_string:format("-mzbench load_workers_subdirs ~s", [LoadWorkersSubdirs]),
+         mzb_string:format("-mzbench load_workers_subdirs ~ts", [LoadWorkersSubdirs]),
          mzb_string:format("-mzbench node_log_user_port ~b", [LogUserPort]),
          mzb_string:format("-mzbench node_interconnect_port ~b", [InterconnectPort])] ++
         [mzb_string:format("-mzbench metric_update_interval_ms ~b", [UpdateIntervalMs]) || UpdateIntervalMs /= undefined],
@@ -224,44 +224,44 @@ get_host_os_id(UserName, Hosts, Logger) ->
 
 get_host_erts_version(UserName, Hosts, Logger) ->
     Versions = mzb_subprocess:remote_cmd(UserName, Hosts,
-        "erl -noshell -eval 'io:fwrite(\\\"~s\\\", [erlang:system_info(version)]).' -s erlang halt",
+        "erl -noshell -eval 'io:fwrite(\\\"~ts\\\", [erlang:system_info(version)]).' -s erlang halt",
         [], Logger, []),
     [lists:flatten(V) || V <- Versions].
 
 get_host_system_id(UserName, Hosts, Logger) ->
     OSIds = get_host_os_id(UserName, Hosts, Logger),
     ERTSVersions = get_host_erts_version(UserName, Hosts, Logger),
-    [{H, mzb_string:format("~s_erts-~s", [Id, ERTS])} || {H, Id, ERTS} <- lists:zip3(Hosts, OSIds, ERTSVersions)].
+    [{H, mzb_string:format("~ts_erts-~ts", [Id, ERTS])} || {H, Id, ERTS} <- lists:zip3(Hosts, OSIds, ERTSVersions)].
 
 download_file(User, Host, FromFile, ToFile, Logger) ->
     _ = case Host of
         Local when Local == "localhost"; Local == "127.0.0.1" ->
-            Logger(info, "[ COPY ] ~s <- ~s", [ToFile, FromFile]),
+            Logger(info, "[ COPY ] ~ts <- ~ts", [ToFile, FromFile]),
             {ok, _} = file:copy(FromFile, ToFile);
         _ ->
             UserNameParam =
                 case User of
                     undefined -> "";
-                    _ -> io_lib:format("~s@", [User])
+                    _ -> io_lib:format("~ts@", [User])
                 end,
             % we can't copy to target file directly because there might be several processes doing it
             % instead we copy to tmp file and after that we atomically rename it to target file
             % also we can't create tmp file in /tmp because it is often being
             % mounted to a different fs than target file and it makes file:rename to fail
             TmpFile = mzb_file:tmp_filename(filename:dirname(ToFile)),
-            _ = mzb_subprocess:exec_format("scp -o StrictHostKeyChecking=no ~s~s:~s ~s",
+            _ = mzb_subprocess:exec_format("scp -o StrictHostKeyChecking=no ~ts~ts:~ts ~ts",
                 [UserNameParam, [Host], FromFile, TmpFile], [stderr_to_stdout], Logger),
-            Logger(info, "[ MV ] ~s -> ~s", [TmpFile, ToFile]),
+            Logger(info, "[ MV ] ~ts -> ~ts", [TmpFile, ToFile]),
             case file:rename(TmpFile, ToFile) of
                 ok -> ok;
                 { error, Reason } ->
                     if Reason =:= exdev ->
-                        Logger(info, "[ MV ] Start copy ~s -> ~s", [TmpFile, ToFile]),
+                        Logger(info, "[ MV ] Start copy ~ts -> ~ts", [TmpFile, ToFile]),
                         { ok , _ } = file:copy(TmpFile, ToFile),
-                        Logger(info, "[ MV ] Delete ~s ", [ TmpFile ]),
+                        Logger(info, "[ MV ] Delete ~ts ", [ TmpFile ]),
                         file:delete(TmpFile);
                        true ->
-                        Logger(error, "Can't rename file ~s to file ~s with reason ~p", [ TmpFile, ToFile, Reason ]),
+                        Logger(error, "Can't rename file ~ts to file ~ts with reason ~p", [ TmpFile, ToFile, Reason ]),
                         error({ cant_rename, Reason })
                     end
             end
@@ -295,12 +295,12 @@ install_package(Hosts, PackageName, InstallSpec, InstallationDir, Config, Logger
     ok = filelib:ensure_dir(hd(PackagesDirs) ++ "/"),
     UniqueOSs = lists:usort([OS || {_Host, OS} <- HostsAndOSs]),
     NeededTarballs =
-        [{OS, find_package(PackagesDirs, mzb_string:format("~s-~s-~s.tgz", [PackageName, Version, OS]))}
+        [{OS, find_package(PackagesDirs, mzb_string:format("~ts-~ts-~ts.tgz", [PackageName, Version, OS]))}
         || OS <- UniqueOSs],
     MissingTarballs = [{OS, T} || {OS, T} <- NeededTarballs, not filelib:is_file(T)],
     Logger(info, "Missing tarballs: ~p", [MissingTarballs]),
     OSsWithMissingTarballs = case [OS || {OS, _} <- MissingTarballs] of
-        ["noarch"] -> Logger(info, "Building package ~s on api server", [PackageName]),
+        ["noarch"] -> Logger(info, "Building package ~ts on api server", [PackageName]),
                       [TarballPath] = [T || {_, T} <- MissingTarballs],
                       build_package_on_host("127.0.0.1", User, TarballPath, InstallSpec, Logger),
                       [];
@@ -316,7 +316,7 @@ install_package(Hosts, PackageName, InstallSpec, InstallationDir, Config, Logger
                         build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger),
                         case lists:keyfind(OS, 2, HostsAndOSs) of
                             {Host, OS} ->
-                                Logger(info, "Downloading package ~s from ~s", [PackageName, Host]),
+                                Logger(info, "Downloading package ~ts from ~ts", [PackageName, Host]),
                                 download_file(User, Host, RemoteTarballPath, LocalTarballPath, Logger);
                             _ ->
                                 ok
@@ -326,11 +326,11 @@ install_package(Hosts, PackageName, InstallSpec, InstallationDir, Config, Logger
                 end,
                 % Extract tgz to tmp directory and then rsync it to the installation directory in order to prevent
                 % different nodes provisioning to affect each other (if we ran several nodes on one host)
-                InstallationCmd = mzb_string:format("mkdir -p ~s && cd ~s && tar xzf ~s && mkdir -p ~s && rsync -aW ~s/ ~s",
+                InstallationCmd = mzb_string:format("mkdir -p ~ts && cd ~ts && tar xzf ~ts && mkdir -p ~ts && rsync -aW ~ts/ ~ts",
                     [ExtractDir, ExtractDir, RemoteTarballPath, InstallationDir, ExtractDir, InstallationDir]),
                 _ = mzb_subprocess:remote_cmd(User, [Host], InstallationCmd, [], Logger)
             after
-                RemoveCmd = mzb_string:format("rm -rf ~s; rm -rf ~s; true", [RemoteTarballPath, ExtractDir]),
+                RemoveCmd = mzb_string:format("rm -rf ~ts; rm -rf ~ts; true", [RemoteTarballPath, ExtractDir]),
                 _ = mzb_subprocess:remote_cmd(User, [Host], RemoveCmd, [], Logger)
             end
         end,
@@ -351,18 +351,18 @@ build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger) ->
     DeploymentDirectory = mzb_file:tmp_filename(),
     case InstallSpec of
         #git_install_spec{repo = GitRepo, branch = GitBranch, dir = GitSubDir} ->
-            Cmd = mzb_string:format("git clone ~s deployment_code && cd deployment_code && git checkout ~s && cd ./~s", [GitRepo, GitBranch, GitSubDir]),
-            GenerationCmd = io_lib:format("mkdir -p ~s && cd ~s && ~s "
-                                          "&& make generate_tgz && mv *.tgz ~s",
+            Cmd = mzb_string:format("git clone ~ts deployment_code && cd deployment_code && git checkout ~ts && cd ./~ts", [GitRepo, GitBranch, GitSubDir]),
+            GenerationCmd = io_lib:format("mkdir -p ~ts && cd ~ts && ~ts "
+                                          "&& make generate_tgz && mv *.tgz ~ts",
                                           [DeploymentDirectory, DeploymentDirectory,
                                            Cmd, RemoteTarballPath]),
             _ = mzb_subprocess:remote_cmd(User, [Host], GenerationCmd, [], Logger);
         #rsync_install_spec{remote = Remote, excludes = Excludes, dir = SubDir} ->
             TargetFolder = DeploymentDirectory ++ "/deployment_code",
-            Cmd = mzb_string:format("rsync -aW --rsync-path='mkdir -p ~s && rsync' ~s ~s/ ~s",
+            Cmd = mzb_string:format("rsync -aW --rsync-path='mkdir -p ~ts && rsync' ~ts ~ts/ ~ts",
                 [TargetFolder, string:join(["--exclude=" ++ E || E <- Excludes], " "), Remote, User ++ "@" ++ Host ++ ":" ++ TargetFolder]),
             mzb_subprocess:exec_format(Cmd, [], [], Logger),
-            GenerationCmd = io_lib:format("cd ~s/~s && make generate_tgz && mv *.tgz ~s",
+            GenerationCmd = io_lib:format("cd ~ts/~ts && make generate_tgz && mv *.tgz ~ts",
                                           [TargetFolder, SubDir, RemoteTarballPath]),
             _ = mzb_subprocess:remote_cmd(User, [Host], GenerationCmd, [], Logger)
     end,
