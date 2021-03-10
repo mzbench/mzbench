@@ -15,7 +15,7 @@ send(To, Subject, Body, Attachments, Config) ->
 
 smtp_or_sendmail(_, ToAddr, EncodedBody, undefined) ->
     _ = exec_with_input(
-        "sendmail ~ts", [ToAddr], [stderr_to_stdout],
+        "sendmail ~ts", [ToAddr], [],
         EncodedBody, mzb_api_app:default_logger());
 smtp_or_sendmail(FromAddr, ToAddr, EncodedBody, SmtpOptions) ->
   <<"Ok", _/binary>> = gen_smtp_client:send_blocking({FromAddr, [ToAddr], EncodedBody}, SmtpOptions).

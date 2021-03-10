@@ -3,11 +3,13 @@ SECOND_ARG := $(wordlist 2,2,$(MAKECMDGOALS))
 
 .SILENT: new-worker
 
-REBAR := $(abspath $(shell which ../bin/rebar3 || which rebar3))
+REBAR := ./rebar3
+# $(abspath $(shell which ../bin/rebar3 || which rebar3))
 SERVICE_PREFIX=/mz
 SERVICE_NAME=mzbench
 SERVICE_LOG_DIR=/var/log/${SERVICE_NAME}
-GIT_HEAD := $(shell git rev-parse HEAD)
+GIT_HEAD := git-head
+# $(shell git rev-parse HEAD)
 OS_VERSION := $(shell uname -sr | awk '{gsub(/ /, "-"); print tolower($$0)}')
 RELEASE_BINARY := _build/default/rel/$(SERVICE_NAME)/bin/$(SERVICE_NAME)
 

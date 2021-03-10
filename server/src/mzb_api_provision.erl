@@ -169,7 +169,7 @@ ensure_file_content(Hosts, Content, Filepath,
     ok = ensure_file(UserName, Hosts, Localfile, Remotefile, Logger),
     ok = file:delete(Localfile).
 
-ensure_file(_UserName, [Host], LocalPath, RemotePath, Logger) when Host == "localhost"; Host == "127.0.0.1" ->
+ensure_file(_UserName, [Host], LocalPath, RemotePath, Logger) when ?IS_LOCALHOST(Host) ->
     Logger(info, "[ COPY ] ~ts -> ~ts", [LocalPath, RemotePath]),
     {ok, _} = file:copy(LocalPath, RemotePath),
     ok;
@@ -183,7 +183,7 @@ ensure_file(UserName, Hosts, LocalPath, RemotePath, Logger) ->
     _ = mzb_lists:pmap(
         fun (Host) ->
             mzb_subprocess:exec_format("scp -o StrictHostKeyChecking=no ~ts ~ts~ts:~ts",
-                [LocalPath, UserNameParam, Host, RemotePath], [stderr_to_stdout], fun (_, _, _) -> ok end)
+                [LocalPath, UserNameParam, Host, RemotePath], [], mzb_api_app:default_logger())
         end, Hosts),
     ok.
 
