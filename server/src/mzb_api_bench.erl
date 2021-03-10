@@ -942,11 +942,11 @@ deflate_process(Filename) ->
                 close -> Close();
                 flush -> _ = Flush(), D(N + 1);
                 {write_sync, From, Ref1, Data} ->
-                    _ = file:write(H, zlib:deflate(Z, Data, none)),
+                    _ = file:write(H, zlib:deflate(Z, unicode:characters_to_binary(lists:flatten(Data)), none)),
                     From ! {write_res, Ref1, ok},
                     D(N + 1);
                 {write, Data} ->
-                    _ = file:write(H, zlib:deflate(Z, Data, none)),
+                    _ = file:write(H, zlib:deflate(Z,  unicode:characters_to_binary(lists:flatten(Data)), none)),
                     D(N + 1)
             end
     end (0).

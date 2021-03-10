@@ -60,7 +60,7 @@ local_tgz: generate_tgz
 
 .PHONY: clean
 clean:
-	$(REBAR) clean
+	# $(REBAR) clean
 	rm -rf _build
 	rm -rf .make
 	rm -rf *.tgz

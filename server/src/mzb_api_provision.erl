@@ -8,6 +8,7 @@
 ]).
 
 -include_lib("mzbench_language/include/mzbl_types.hrl").
+-include_lib("mzbench_utils/include/localhost.hrl").
 
 -define(MICROSEC_IN_SEC, 1000000).
 
@@ -358,13 +359,32 @@ build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger) ->
                                            Cmd, RemoteTarballPath]),
             _ = mzb_subprocess:remote_cmd(User, [Host], GenerationCmd, [], Logger);
         #rsync_install_spec{remote = Remote, excludes = Excludes, dir = SubDir} ->
+            RemoteAbs = filename:absname(Remote),
             TargetFolder = DeploymentDirectory ++ "/deployment_code",
-            Cmd = mzb_string:format("rsync -aW --rsync-path='mkdir -p ~ts && rsync' ~ts ~ts/ ~ts",
-                [TargetFolder, string:join(["--exclude=" ++ E || E <- Excludes], " "), Remote, User ++ "@" ++ Host ++ ":" ++ TargetFolder]),
-            mzb_subprocess:exec_format(Cmd, [], [], Logger),
-            GenerationCmd = mzb_string:format("cd ~ts/~ts && make generate_tgz && mv *.tgz ~ts",
-                                          [TargetFolder, SubDir, RemoteTarballPath]),
-            _ = mzb_subprocess:remote_cmd(User, [Host], GenerationCmd, [], Logger)
+            RSyncExcludes =  mzb_binary:join([[<<"--exclude=">>, E] || E <- Excludes], <<" ">>),
+            MainFolder = TargetFolder ++ "/" ++ SubDir,
+            case ?IS_LOCALHOST(Host) of
+                true ->
+                    mzb_subprocess:exec_format([
+                        {"cd ~ts && ./scripts/prepare_sources.sh", [ RemoteAbs ]},
+                        {"mkdir -p ~ts", [ TargetFolder ]},
+                        {"rsync -aWL -v --stats --progress ~ts ~ts/prepared_sources/ ~ts/node/", [ RSyncExcludes, RemoteAbs, TargetFolder ] }
+                    ], Logger),
+                    mzb_subprocess:exec_format([
+                        {"cd ~ts &&  make generate_tgz && mv -v *.tgz ~ts", [MainFolder, RemoteTarballPath] }
+                    ], [
+                        { env, [
+                            { <<"PATH">>, os:get_env_var("PATH")}
+                        ]}
+                    ],Logger);
+                false ->
+                    RemHost = mzb_binary:merge([User, <<"@">>, Host, <<":">>, TargetFolder]),
+                    mzb_subprocess:exec_format([
+                        {"cd ~ts && ./scripts/prepare_sources.sh", [ RemoteAbs ]},
+                        {"rsync -aWL --rsync-path='mkdir -p ~ts && rsync' ~ts ~ts/prepared_sources/ ~ts/node/", [ TargetFolder, RSyncExcludes, Remote, RemHost ] },
+                        {"cd ~ts && make generate_tgz && mv -v *.tgz ~ts", [MainFolder, SubDir, RemoteTarballPath] }
+                    ], Logger)
+            end
     end,
     ok.
 

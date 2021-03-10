@@ -13,7 +13,7 @@
 -compile({no_autoimport, [ length/1 ]}).
 
 format(Format, Args) ->
-  mzb_string:bin_format(Format, Args).
+  unicode:characters_to_binary(format(Format, Args)).
 
 format(Formats) ->
   iolist_to_binary(lists:map(fun({Format, Args}) -> format(Format, Args) end, Formats)).
