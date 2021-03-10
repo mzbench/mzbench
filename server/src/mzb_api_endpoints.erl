@@ -40,8 +40,8 @@ init(Req, _Opts) ->
             Req2 = reply_error(403, <<"forbidden">>, Description, Req),
             {ok, Req2, #{}};
 
-        _:E ->
-            Description = io_lib:format("Server Internal Error: ~p~n~nReq: ~p~n~nStacktrace: ~p", [E, Req, erlang:get_stacktrace()]),
+        _:E:ST ->
+            Description = io_lib:format("Server Internal Error: ~p~n~nReq: ~p~n~nStacktrace: ~p", [E, Req, ST]),
             Req2 = reply_error(500, <<"internal_error">>, Description, Req),
             lager:error(Description),
             {ok, Req2, #{}}

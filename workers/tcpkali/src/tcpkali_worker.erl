@@ -503,9 +503,9 @@ json2cbor(State, _Meta, Str, Type) ->
     JSON =
         try jiffy:decode(Str3, [return_maps])
         catch
-            C:E ->
+            C:E:ST ->
                 lager:error("Bad json: ~s", [Str3]),
-                erlang:raise(C, E, erlang:get_stacktrace())
+                erlang:raise(C, E, ST)
         end,
 
     CBORBin = erlang:iolist_to_binary(cbor:encode(JSON)),

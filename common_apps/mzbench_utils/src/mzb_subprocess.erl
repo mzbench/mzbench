@@ -47,12 +47,10 @@ remote_cmd(UserName, Hosts, Executable, Args, Logger, Opts) ->
                 exec_format(CmdStr, [], Opts, fun (_, _, _) -> ok end)
             end, Hosts)
     catch
-        C:{cmd_failed, Cmd, Code, Output} = E ->
-            ST = erlang:get_stacktrace(),
+        C:{cmd_failed, Cmd, Code, Output} = E:ST ->
             Logger(error, "[ REMOTE EXEC ] Command execution failed:~nCmd: ~s~nExit code: ~p~nOutput: ~s", [Cmd, Code, Output]),
             erlang:raise(C, E, ST);
-        C:E ->
-            ST = erlang:get_stacktrace(),
+        C:E:ST ->
             Logger(error, "[ REMOTE EXEC ] Command execution unnormally failed: ~p~nCmd: ~p~nArgs: ~p~nHosts: ~p", [E, Executable, Args, Hosts]),
             erlang:raise(C, E, ST)
     end.

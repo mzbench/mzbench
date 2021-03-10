@@ -60,8 +60,7 @@ create_cluster(PluginOpts, NumNodes, ClusterConfig) when is_integer(NumNodes), N
         lager:info("Pods are ssh-ready ~p", [PodNames]),
         {ok, ID, UserName, IPs}
     catch
-        C:E ->
-            ST = erlang:get_stacktrace(),
+        C:E:ST ->
             destroy_cluster(ID),
             erlang:raise(C,E,ST)
     end.

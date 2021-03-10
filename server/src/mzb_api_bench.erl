@@ -415,8 +415,7 @@ handle_stage(finalize, deallocating_hosts, #{deallocator:= Deallocator} = State)
             info("Deallocator has started", [], State),
             Deallocator(),
             ok
-        catch _C:E ->
-            ST = erlang:get_stacktrace(),
+        catch _C:E:ST ->
             error("Deallocation has failed with reason: ~p~nStacktrace: ~p", [E, ST], State),
             retry
         end
@@ -562,16 +561,14 @@ terminate(Reason, #{id:= Id} = State) ->
                                     Res = handle_stage(finalize, Stage, NewState),
                                     Res
                                 catch
-                                    _C:E ->
-                                        ST = erlang:get_stacktrace(),
+                                    _C:E:ST ->
                                         error("Stage 'finalize - ~s': failed~n~s", [Stage, format_error(Stage, {E, ST})], NewState)
                                 end
                             end, Stages),
 
                 timer:cancel(Timer)
             catch
-                Class:Error ->
-                    Stacktrace= erlang:get_stacktrace(),
+                Class:Error:Stacktrace ->
                     lager:error("Finalizing process for #~p has crashed with reason: ~p~n~p", [Id, Error, Stacktrace]),
                     erlang:raise(Class, Error, Stacktrace)
             end
@@ -682,8 +679,8 @@ send_email_report(Emails, #{id:= Id,
             end, Emails),
         ok
     catch
-        _:Error ->
-            {error, {Error, erlang:get_stacktrace()}}
+        _:Error:ST ->
+            {error, {Error, ST}}
     end;
 send_email_report(_Emails, Status) ->
     {error, {badarg, Status}}.
@@ -1034,8 +1031,8 @@ aggregate_results(Metrics, Histograms, #{config:= Config} = State) ->
             try
                 aggregate_results_for_metric(M, Config, Percentiles, Histograms)
             catch
-                _:Error ->
-                    error("Aggregating result for ~p failed: ~p~nStacktrace: ~p", [M, Error, erlang:get_stacktrace()], State),
+                _:Error:ST ->
+                    error("Aggregating result for ~p failed: ~p~nStacktrace: ~p", [M, Error, ST], State),
                     []
             end
         end, Flatten),

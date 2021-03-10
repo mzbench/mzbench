@@ -754,8 +754,8 @@ filter_dashboards(List, Query) ->
           {match, _} -> true;
                    _ -> false
         end end, List)
-    catch _:Error ->
-        lager:error("Failed to apply dashboard filter: ~p ~p~n Query: ~p -- List ~p", [Error, erlang:get_stacktrace(), Query, List]),
+    catch _:Error:ST ->
+        lager:error("Failed to apply dashboard filter: ~p ~p~n Query: ~p -- List ~p", [Error, ST, Query, List]),
         []
     end.
 
@@ -807,8 +807,8 @@ is_satisfy_fields(Query, BenchInfo) ->
                       ({exact, Field}) ->
                           Field == Query
                   end, SearchFields)
-    catch _:Error ->
-        lager:error("Failed to apply filter: ~p ~p~n Query: ~p -- BenchInfo ~p", [Error, erlang:get_stacktrace(), Query, BenchInfo]),
+    catch _:Error:ST ->
+        lager:error("Failed to apply filter: ~p ~p~n Query: ~p -- BenchInfo ~p", [Error, ST, Query, BenchInfo]),
         false
     end.
 

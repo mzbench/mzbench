@@ -18,8 +18,7 @@ start_and_link_with(PidToLinkWith, Purpose, Host, Port, Dispatcher, State) ->
             {error, Reason} ->
                 Self ! {self(), failed, Reason}
         catch
-            C:E ->
-                ST = erlang:get_stacktrace(),
+            C:E:ST ->
                 Self ! {self(), failed, {C, E, ST}}
         end
     end),

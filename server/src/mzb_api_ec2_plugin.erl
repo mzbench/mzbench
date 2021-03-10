@@ -32,8 +32,7 @@ create_cluster(Opts = #{instance_user:= UserName}, NumNodes, Config) when is_int
         wait_nodes_ssh(IPs, ?MAX_POLL_COUNT),
         {ok, {Opts, Ids}, UserName, IPs}
     catch
-        C:E ->
-            ST = erlang:get_stacktrace(),
+        C:E:ST ->
             destroy_cluster({Opts, Ids}),
             erlang:raise(C,E,ST)
     end.

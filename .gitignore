@@ -1,4 +1,6 @@
 .eunit
+.idea
+*.iml
 deps
 *.o
 *.beam

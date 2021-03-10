@@ -538,8 +538,8 @@ save_results(Id, Status, State) ->
         write_status(Id, Status, State),
         true = ets:update_element(benchmarks, Id, {3, Status})
     catch
-        _:Error ->
-            lager:error("Save bench #~b results failed with reason: ~p~n~p", [Id, Error, erlang:get_stacktrace()])
+        _:Error:ST ->
+            lager:error("Save bench #~b results failed with reason: ~p~n~p", [Id, Error, ST])
     end.
 
 write_status(Id, Status, #{data_dir:= Dir}) ->
@@ -562,8 +562,8 @@ import_data(Dir) ->
             import_bench_status(Id, File),
             max(Id, Max)
         catch
-            _:Error ->
-                lager:error("Parsing status filename ~s failed with reason: ~p~n~p", [File, Error, erlang:get_stacktrace()]),
+            _:Error:ST ->
+                lager:error("Parsing status filename ~s failed with reason: ~p~n~p", [File, Error, ST]),
                 Max
         end
     end,
@@ -574,8 +574,8 @@ import_bench_status(Id, File) ->
         {ok, [Status]} = file:consult(File),
         #{status:= _, start_time := _, finish_time := _, config := #{}} = Status,
         ets:insert(benchmarks, {Id, undefined, Status})
-    catch _:E ->
-        lager:error("Import from file ~s failed with reason: ~p~n~p", [File, E, erlang:get_stacktrace()])
+    catch _:E:ST ->
+        lager:error("Import from file ~s failed with reason: ~p~n~p", [File, E, ST])
     end.
 
 sys_username() ->

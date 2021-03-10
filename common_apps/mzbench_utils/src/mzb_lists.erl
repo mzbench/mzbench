@@ -34,7 +34,7 @@ pmap(Fun, List) ->
             Res = try
                 {Ref, {ok, Fun(Element)}}
             catch
-                C:E -> {Ref, {exception, {C,E,erlang:get_stacktrace()}}}
+                C:E:ST -> {Ref, {exception, {C,E,ST}}}
             end,
             Self ! Res
         end),
