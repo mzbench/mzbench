@@ -44,7 +44,7 @@ sudo pip install mzbench_api_client
 mzbench start_server
 ```
 
-### From Docker container
+### From Docker container (Caution: does not seem to work, as of 2021)
 
 Docker is a container platform, more information is available at its [website](https://www.docker.com/). If you have Docker up and running, use the following command to start MZBench server:
 
@@ -60,7 +60,7 @@ Instead of download the image from the docker hub, you may want to build it manu
 docker build -t mzbench -f Dockerfile .
 ```
 
-### From Helm package
+### From Helm package (Caution: does not seem to work, as of 2021)
 
 [Helm](https://helm.sh/) is a package manager for [Kubernetes](https://kubernetes.io/).
 We assume that:
