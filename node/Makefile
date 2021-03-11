@@ -69,15 +69,19 @@ clean:
 	rm -rf pkgroot
 	rm -f rebar.lock
 	rm -rf prepared_sources
+	rm -rf ~/.local/share/mzbench
 
 DIALYZABLE_EBINS := apps/*/ebin
 -include ../lib/dialyzer.mk
 
 $(RELEASE_BINARY): .make/compilation-up-to-date rel/files/sys.config rel/files/vm.args
+	env
 	$(REBAR) release
+	./scripts/post_release_hook.sh
 	touch $(RELEASE_BINARY)
 
 .make/compilation-up-to-date: rebar.config $(SOURCES) .make/git-rev-$(GIT_HEAD) $(MZBENCH_COMMON_SOURCES)
+	env
 	$(REBAR) compile
 	make -C _build/default/deps/jiffy
 	find . -xtype l 2>/dev/null -exec rm {} \;
@@ -94,4 +98,4 @@ shell:
 
 .PHONY: local
 local:
-	./scripts/run_local.escript example/test.bdl
+	cd ./scripts && ./run_local.escript ../example/test.bdl --env loop_rate=5

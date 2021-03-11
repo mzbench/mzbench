@@ -97,7 +97,8 @@ clean_nodes(NodePids, Config, Logger) ->
         [],
         Logger),
     _ = kill_nodes(NodePids, [DirectorHost|WorkerHosts], Codes, UserName, Logger),
-    length(RootDir) > 1 andalso mzb_subprocess:remote_cmd(UserName, [DirectorHost|WorkerHosts], mzb_string:format("rm -rf ~ts", [RootDir]), [], Logger),
+    % TODO: Uncomment to clean
+    % length(RootDir) > 1 andalso mzb_subprocess:remote_cmd(UserName, [DirectorHost|WorkerHosts], mzb_string:format("rm -rf ~ts", [RootDir]), [], Logger),
     ok.
 
 kill_nodes([], _, _, _, _) -> ok;
@@ -194,7 +195,7 @@ ensure_dir(_User, [Local], Dir, Logger) when Local == "localhost"; Local == "127
     % create Dir's parent, but not Dir itself
     ok = filelib:ensure_dir(Dir ++ "/");
 ensure_dir(User, Hosts, Dir, Logger) ->
-    _ = mzb_subprocess:remote_cmd(User, Hosts, "mkdir", ["-p", Dir], Logger, [stderr_to_stdout]),
+    _ = mzb_subprocess:remote_cmd(User, Hosts, "mkdir", ["-p", Dir], Logger, []),
     ok.
 
 director_sname(#{id:= Id}) -> "mzb_director" ++ integer_to_list(Id).
@@ -251,7 +252,7 @@ download_file(User, Host, FromFile, ToFile, Logger) ->
             % mounted to a different fs than target file and it makes file:rename to fail
             TmpFile = mzb_file:tmp_filename(filename:dirname(ToFile)),
             _ = mzb_subprocess:exec_format("scp -o StrictHostKeyChecking=no ~ts~ts:~ts ~ts",
-                [UserNameParam, [Host], FromFile, TmpFile], [stderr_to_stdout], Logger),
+                [UserNameParam, [Host], FromFile, TmpFile], [], Logger),
             Logger(info, "[ MV ] ~ts -> ~ts", [TmpFile, ToFile]),
             case file:rename(TmpFile, ToFile) of
                 ok -> ok;
@@ -331,8 +332,10 @@ install_package(Hosts, PackageName, InstallSpec, InstallationDir, Config, Logger
                     [ExtractDir, ExtractDir, RemoteTarballPath, InstallationDir, ExtractDir, InstallationDir]),
                 _ = mzb_subprocess:remote_cmd(User, [Host], InstallationCmd, [], Logger)
             after
-                RemoveCmd = mzb_string:format("rm -rf ~ts; rm -rf ~ts; true", [RemoteTarballPath, ExtractDir]),
-                _ = mzb_subprocess:remote_cmd(User, [Host], RemoveCmd, [], Logger)
+                % TODO: Uncomment to clean
+                % RemoveCmd = mzb_string:format("rm -rf ~ts; rm -rf ~ts; true", [RemoteTarballPath, ExtractDir]),
+                % _ = mzb_subprocess:remote_cmd(User, [Host], RemoveCmd, [], Logger)
+                ok
             end
         end,
         HostsAndOSs),
@@ -354,7 +357,7 @@ build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger) ->
         #git_install_spec{repo = GitRepo, branch = GitBranch, dir = GitSubDir} ->
             Cmd = mzb_string:format("git clone ~ts deployment_code && cd deployment_code && git checkout ~ts && cd ./~ts", [GitRepo, GitBranch, GitSubDir]),
             GenerationCmd = mzb_string:format("mkdir -p ~ts && cd ~ts && ~ts "
-                                          "&& make generate_tgz && mv *.tgz ~ts",
+                                          "&& DIAGNOSTIC=1 make generate_tgz && mv *.tgz ~ts",
                                           [DeploymentDirectory, DeploymentDirectory,
                                            Cmd, RemoteTarballPath]),
             _ = mzb_subprocess:remote_cmd(User, [Host], GenerationCmd, [], Logger);
@@ -368,21 +371,23 @@ build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger) ->
                     mzb_subprocess:exec_format([
                         {"cd ~ts && ./scripts/prepare_sources.sh", [ RemoteAbs ]},
                         {"mkdir -p ~ts", [ TargetFolder ]},
-                        {"rsync -aWL -v --stats --progress ~ts ~ts/prepared_sources/ ~ts/node/", [ RSyncExcludes, RemoteAbs, TargetFolder ] }
+                        {"rsync -aWl -v ~ts ~ts/prepared_sources/ ~ts/node/", [ RSyncExcludes, RemoteAbs, TargetFolder ] }
                     ], Logger),
-                    mzb_subprocess:exec_format([
-                        {"cd ~ts &&  make generate_tgz && mv -v *.tgz ~ts", [MainFolder, RemoteTarballPath] }
-                    ], [
-                        { env, [
-                            { <<"PATH">>, os:get_env_var("PATH")}
-                        ]}
-                    ],Logger);
+                    %%mzb_subprocess:exec_format([
+                    Cmd = mzb_string:format([
+                        {"cd ~ts && DIAGNOSTIC=1 make generate_tgz && mv -v *.tgz ~ts", [MainFolder, RemoteTarballPath] }
+                    %%], [],Logger),
+                    ]),
+                    Logger(info, "[ EXEC ] ~ts", [ Cmd ]),
+                    Output = os:cmd(Cmd),
+                    Logger(info, "~ts", [ Output ]),
+                    io:format("-------------------------------------------------~n~ts", [ Output ]);
                 false ->
                     RemHost = mzb_binary:merge([User, <<"@">>, Host, <<":">>, TargetFolder]),
                     mzb_subprocess:exec_format([
                         {"cd ~ts && ./scripts/prepare_sources.sh", [ RemoteAbs ]},
-                        {"rsync -aWL --rsync-path='mkdir -p ~ts && rsync' ~ts ~ts/prepared_sources/ ~ts/node/", [ TargetFolder, RSyncExcludes, Remote, RemHost ] },
-                        {"cd ~ts && make generate_tgz && mv -v *.tgz ~ts", [MainFolder, SubDir, RemoteTarballPath] }
+                        {"rsync -aWl --rsync-path='mkdir -p ~ts && rsync' ~ts ~ts/prepared_sources/ ~ts/node/", [ TargetFolder, RSyncExcludes, Remote, RemHost ] },
+                        {"cd ~ts && DIAGNOSTIC=1 make generate_tgz && mv -v *.tgz ~ts", [MainFolder, SubDir, RemoteTarballPath] }
                     ], Logger)
             end
     end,

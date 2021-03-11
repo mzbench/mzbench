@@ -131,7 +131,7 @@ check_output(Format, Args, Opts, Logger) ->
 %% INTERNAL
 
 exec(Cmd, Opts) ->
-    case exec:run(Cmd, [ sync, stdout, { stderr, stdout }] ++ Opts) of
+    case exec:run(Cmd, [ sync, stdout, { stderr, stdout }, { env, [{"ESCRIPT_NAME", false }]}] ++ Opts) of
         { ok, []} -> { 0, ""};
         { ok, Info} ->
             Bin = mzb_binary:merge(proplists:get_value(stdout, Info )),

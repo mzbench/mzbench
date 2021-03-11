@@ -12,13 +12,16 @@ main([Script | Params]) ->
 
     ScriptDir = filename:dirname(filename:absname(escript:script_name())),
 
-    LocalCodePaths = lists:foldl(
-                    fun (P, Acc) ->
-                        filelib:wildcard(filename:join(ScriptDir, P)) ++ Acc
-                    end, [],
-                    ["../apps/*/ebin/",
-                     "../../workers/*/ebin/",
-                     "../_build/default/deps/*/ebin/"]),
+    LocalCodePaths = lists:foldl(fun (P, Acc) ->
+        filelib:wildcard(filename:join(ScriptDir, P)) ++ Acc
+    end, [],
+    ["../apps/*/ebin/",
+     "../../workers/*/ebin/",
+     "../_build/default/deps/*/ebin/",
+     "../_build/default/checkouts/*/ebin/"
+    ]),
+
+    io:format("Local code paths: ~p ~n", [ LocalCodePaths ]),
 
     BinDir = filename:dirname(escript:script_name()),
     RpmCodePaths = filelib:wildcard(filename:join(BinDir, "../lib/*/ebin/")),

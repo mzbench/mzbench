@@ -600,7 +600,7 @@ handle_pipeline_status_ll({exception, Phase, Stage, E, ST}, #{result_str:= ResSt
     error("Stage '~ts - ~ts': failed~n~ts", [Phase, Stage, format_error(Stage, {E, ST})], State),
     case ResStr of
         "" ->
-            Res = mzb_string:format("Stage ~p failed: ~p", [Stage, E]),
+            Res = mzb_string:format("Stage ~p failed: ~tp", [Stage, E]),
             State#{result_str => Res};
         _ ->
             State
@@ -868,7 +868,7 @@ format_log(Handler, Severity, Format, Args) ->
 format_error(_, {{cmd_failed, Cmd, Code, Output}, _}) ->
     mzb_string:format("Command returned ~b:~n ~ts~nCommand output: ~ts", [Code, Cmd, Output]);
 format_error(Op, {E, Stack}) ->
-    mzb_string:format("Benchmark has failed on ~p with reason:~n~p~n~nStacktrace: ~p", [Op, E, Stack]).
+    mzb_string:format("Benchmark has failed on ~p with reason:~n~tp~n~nStacktrace: ~p", [Op, E, Stack]).
 
 get_env(K) -> application:get_env(mzbench_api, K, undefined).
 
@@ -942,11 +942,19 @@ deflate_process(Filename) ->
                 close -> Close();
                 flush -> _ = Flush(), D(N + 1);
                 {write_sync, From, Ref1, Data} ->
-                    _ = file:write(H, zlib:deflate(Z, unicode:characters_to_binary(lists:flatten(Data)), none)),
+                    DataBin = if
+                        is_list(Data) -> unicode:characters_to_binary(lists:flatten(Data));
+                        is_binary(Data) -> Data
+                    end,
+                    _ = file:write(H, zlib:deflate(Z, DataBin, none)),
                     From ! {write_res, Ref1, ok},
                     D(N + 1);
                 {write, Data} ->
-                    _ = file:write(H, zlib:deflate(Z,  unicode:characters_to_binary(lists:flatten(Data)), none)),
+                    DataBin = if
+                        is_list(Data) -> unicode:characters_to_binary(lists:flatten(Data));
+                        is_binary(Data) -> Data
+                    end,
+                    _ = file:write(H, zlib:deflate(Z, DataBin, none)),
                     D(N + 1)
             end
     end (0).
