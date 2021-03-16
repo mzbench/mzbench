@@ -34,8 +34,7 @@ dispatch({request, Ref, Msg}, State) ->
         {reply, Reply} -> ReplyFun(Reply);
         noreply -> ok
     catch
-        C:Error ->
-            ST = erlang:get_stacktrace(),
+        C:Error:ST ->
             system_log:error("Api server message handling exception: ~p~n~p", [Error, ST]),
             send_message({response, Ref, {exception, {C, Error, ST}}}, State)
     end,
@@ -76,8 +75,8 @@ handle_message({connect_nodes, HostsAndPorts}, ReplyFun) ->
         end (_Retries = 10),
         noreply
     catch
-        _:E ->
-            system_log:error("Connecting nodes error: ~p~n~p", [E, erlang:get_stacktrace()]),
+        _:E:ST ->
+            system_log:error("Connecting nodes error: ~p~n~p", [E, ST]),
             {reply, {error, E}}
     end;
 

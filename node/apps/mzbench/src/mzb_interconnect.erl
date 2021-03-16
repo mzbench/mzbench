@@ -96,8 +96,8 @@ multi_call(Nodes, Req, Timeout) ->
             try call(N, Req, Timeout) of
                 R -> {ok, {N, R}}
             catch
-                _:Reason ->
-                    lager:error("Call ~p to ~p failed with reason: ~p~n~p", [Req, N, Reason, erlang:get_stacktrace()]),
+                _:Reason:ST ->
+                    lager:error("Call ~p to ~p failed with reason: ~p~n~p", [Req, N, Reason, ST]),
                     {bad, N}
             end
         end, Nodes),
@@ -168,8 +168,8 @@ handle_call({call, Node, Req}, From, State) when Node == node() ->
         noreply -> {noreply, State};
         {reply, Res} -> {reply, {ok, Res}, State}
     catch
-        C:E ->
-            {reply, {exception, {C,E,erlang:get_stacktrace()}}, State}
+        C:E:ST ->
+            {reply, {exception, {C,E,ST}}, State}
     end;
 
 handle_call({call, Node, Req}, From, State) ->
@@ -181,8 +181,8 @@ handle_call({call_director, Req}, From, #s{role = director} = State) ->
         noreply -> {noreply, State};
         {reply, Res} -> {reply, {ok, Res}, State}
     catch
-        C:E ->
-            {reply, {exception, {C,E,erlang:get_stacktrace()}}, State}
+        C:E:ST ->
+            {reply, {exception, {C,E,ST}}, State}
     end;
 
 handle_call({call_director, _Req}, _From, #s{role = worker, director = undefined} = State) ->
@@ -262,8 +262,8 @@ handle_cast({from_remote, {call, {FromNode, From}, Msg}}, State) ->
         noreply -> ok;
         {reply, Res} -> ReplyFun(Res)
     catch
-        C:E ->
-            send_to(FromNode, {reply, From, {exception, {C,E,erlang:get_stacktrace()}}}, State)
+        C:E:ST ->
+            send_to(FromNode, {reply, From, {exception, {C,E,ST}}}, State)
     end,
     {noreply, State};
 
@@ -309,8 +309,8 @@ handle_message(Msg, ReplyFun, #s{handler  = Handler}) ->
         {reply, Res} -> {reply, Res};
         noreply -> noreply
     catch
-        _:E ->
-            system_log:error("Handler for ~p has crashed at ~p: ~p~n~p", [Msg, node(), E, erlang:get_stacktrace()]),
+        _:E:ST ->
+            system_log:error("Handler for ~p has crashed at ~p: ~p~n~p", [Msg, node(), E, ST]),
             noreply
     end.
 

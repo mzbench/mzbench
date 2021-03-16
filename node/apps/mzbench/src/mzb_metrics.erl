@@ -267,7 +267,10 @@ evaluate_derived_metrics(#s{metric_groups = MetricGroups} = State) ->
             undefined -> ok; % nothing was calculated
             Val -> global_set(Name, gauge, Val)
         catch
-            _:Reason -> system_log:error("Failed to evaluate derived metrics:~nWorker: ~p~nFunction: ~p~nReason: ~p~nStacktrace: ~p~n", [Worker, Resolver, Reason, erlang:get_stacktrace()])
+            _:Reason:ST ->
+                system_log:error("Failed to evaluate derived metrics:~nWorker: ~p~nFunction: ~p~nReason: ~p~nStacktrace: ~p~n",
+                    [Worker, Resolver, Reason, ST]
+                )
         end
     end, DerivedMetrics),
     system_log:debug("[ metrics ] Current metrics values:~n~ts", [format_global_metrics()]),

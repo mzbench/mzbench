@@ -23,8 +23,8 @@ eval(Expr, State, Env, WorkerProvider) ->
     catch
         error:{mzbl_interpreter_runtime_error, _} = E:ST ->
             erlang:raise(error, E, ST);
-        E:R ->
-            erlang:raise(error, {mzbl_interpreter_runtime_error, {{E, R}, State}}, erlang:get_stacktrace())
+        E:R:ST ->
+            erlang:raise(error, {mzbl_interpreter_runtime_error, {{E, R}, State}}, ST)
     end.
 
 -spec eval_(script_expr(), worker_state(), worker_env(), module())

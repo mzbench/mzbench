@@ -26,7 +26,11 @@ add_pathsz(Module) ->
     CodeWildcards =
         [filename:join([D, Module, "ebin"])              || D <- WorkerDirs] ++
         [filename:join([D, Module, "deps", "*", "ebin"]) || D <- WorkerDirs] ++
+        [filename:join([D, Module, "lib" , "*", "ebin"]) || D <- WorkerDirs] ++
         [filename:join([D, Module, "apps", "*", "ebin"]) || D <- WorkerDirs],
+
+    {ok, CurrentDirectory} = file:get_cwd(),
+    system_log:info("Add worker wildcards: ~p ~n Current path: ~s", [CodeWildcards, CurrentDirectory]),
 
     CodePaths = [File || WC <- CodeWildcards, File <- mzb_file:wildcard(WC)],
 

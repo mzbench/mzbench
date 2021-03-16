@@ -34,11 +34,9 @@ catch_eval(Script, State, Env, {Provider, _}) ->
         {Result, ResState} = mzbl_interpreter:eval(Script, State, Env, Provider),
         {{ok, Result}, ResState}
     catch
-        error:{mzbl_interpreter_runtime_error, {{Error, Reason}, ErrorState}} ->
-            ST = erlang:get_stacktrace(),
+        error:{mzbl_interpreter_runtime_error, {{Error, Reason}, ErrorState}}:ST ->
             {{exception, {Error, Reason, ST}}, ErrorState};
-        C:E ->
-            ST = erlang:get_stacktrace(),
+        C:E:ST ->
             {{exception, {C, E, ST}}, unknown}
     end.
 

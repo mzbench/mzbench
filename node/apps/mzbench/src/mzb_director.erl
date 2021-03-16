@@ -114,8 +114,8 @@ handle_call({change_env, NewEnv}, _From, #state{script = Script, env = Env, node
         {[{_, {ok, _}}|_], []} = mzb_interconnect:multi_call(lists:usort([node()|Nodes]), {compile_env, Script, MergedEnv}),
         {reply, ok, State#state{env = MergedEnv}}
     catch
-        _:E ->
-            system_log:error("Change env failed with reason ~p~nEnv:~p~nStacktrace:~p", [E, MergedEnv, erlang:get_stacktrace()]),
+        _:E:ST ->
+            system_log:error("Change env failed with reason ~p~nEnv:~p~nStacktrace:~p", [E, MergedEnv, ST]),
             {reply, {error, {internal_error, E}}, State}
     end;
 
@@ -126,8 +126,8 @@ handle_call({run_command, Pool, Percent, Command}, _From, #state{nodes = Nodes} 
         true = lists:all(fun(X) -> X == ok end, lists:flatten([L || {_, L} <- Replies])),
         {reply, ok, State}
     catch
-        _:E ->
-            system_log:error("Command run failed with reason ~p~nCommand:~p~nStacktrace:~p", [E, Command, erlang:get_stacktrace()]),
+        _:E:ST ->
+            system_log:error("Command run failed with reason ~p~nCommand:~p~nStacktrace:~p", [E, Command, ST]),
             {reply, {error, {internal_error, E}}, State}
     end;
 
@@ -219,8 +219,7 @@ start_metrics(#state{script = Script, assertions = Asserts, env = Env, nodes = N
         mzb_metrics:declare_metrics(WorkerMetrics ++ SystemMetrics),
         ok
     catch
-        C:E ->
-            ST = erlang:get_stacktrace(),
+        C:E:ST ->
             erlang:raise(C, {start_metrics_failed, E}, ST)
     end.
 
@@ -332,8 +331,8 @@ get_stats_data() ->
     try
         {mzb_metrics:get_metrics(), mzb_metrics:get_histogram_data()}
     catch
-        _:Error ->
-            system_log:error("Get stats data exception: ~p~n~p", [Error, erlang:get_stacktrace()]),
+        _:Error:ST ->
+            system_log:error("Get stats data exception: ~p~n~p", [Error, ST]),
             erlang:error(Error)
     end.
 

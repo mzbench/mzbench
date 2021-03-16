@@ -581,7 +581,7 @@ def run_or_validate(script, env, validate):
         pa += ["--pa", p]
     cmd = [os.path.join(escript_path, escript_name), script, '--pa', os.getcwd() + "/ebin"] + pa
 
-    for k, v in env.iteritems():
+    for k, v in env.items():
         cmd.append('--env')
         cmd.append(k + '=' + v)
 
