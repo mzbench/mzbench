@@ -1,0 +1,12 @@
+*
+!amqp
+!cassandra
+!exec
+!http
+!mongo
+!mysql
+!pgsql
+!simple_http
+!tcp
+!tcp_kali
+!xmpp
