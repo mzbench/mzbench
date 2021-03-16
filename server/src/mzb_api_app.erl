@@ -102,7 +102,7 @@ load_config(File, AppName) ->
     case file:consult(mzb_file:expand_filename(File)) of
         {ok, [Config]} ->
             lists:foreach(fun ({App, Env}) when App == AppName ->
-                                lager:info("Reading configuration from ~s for ~s~n~p", [File, AppName, Env]),
+                                lager:info("Reading configuration from ~ts for ~ts~n~p", [File, AppName, Env]),
                                 [ application:set_env(App, Key, Val) || {Key, Val} <- Env];
                               (_) -> ok
                           end, Config),

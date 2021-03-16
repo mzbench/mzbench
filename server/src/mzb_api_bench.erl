@@ -303,7 +303,7 @@ handle_stage(pipeline, pre_hooks, #{cluster_connection:= Connection, config:= Co
         catch
             error:{error, List} ->
                 ResStr = string:join(List, "\n"),
-                error("~s", [ResStr], State),
+                error("~ts", [ResStr], State),
                 mzb_pipeline:error(validation_failed,
                                    fun (S) -> S#{result_str => ResStr} end)
 
@@ -323,7 +323,7 @@ handle_stage(pipeline, starting, #{cluster_connection:= Connection, config:= Con
     case director_call(Connection, {start_benchmark, remote_path(ScriptFilePath, Config), Env}) of
         ok -> ok;
         {error, List} ->
-            ResStr = mzb_string:format("Start failed: ~s", [string:join(List, "\n")]),
+            ResStr = mzb_string:format("Start failed: ~ts", [string:join(List, "\n")]),
             error(ResStr, [], State),
             mzb_pipeline:error(start_benchmark_failed,
                                fun (S) -> S#{result_str => ResStr} end)
@@ -332,11 +332,11 @@ handle_stage(pipeline, starting, #{cluster_connection:= Connection, config:= Con
 handle_stage(pipeline, running, #{cluster_connection:= Connection} = State) ->
     try director_call(Connection, get_results, infinity) of
         {ok, Str, {Metrics, Histograms}} ->
-            info("Benchmark result: SUCCESS~n~s", [Str], State),
+            info("Benchmark result: SUCCESS~n~ts", [Str], State),
             Res = aggregate_results(Metrics, Histograms, State),
             fun (S) -> S#{results => Res, result_str => Str} end;
         {error, Reason, ReasonStr, {Metrics, Histograms}} ->
-            error("Benchmark result: FAILED~n~s", [ReasonStr], State),
+            error("Benchmark result: FAILED~n~ts", [ReasonStr], State),
             Res = aggregate_results(Metrics, Histograms, State),
             mzb_pipeline:error({benchmark_failed, Reason}, fun (S) -> S#{results => Res, result_str => ReasonStr} end)
     catch
@@ -415,8 +415,7 @@ handle_stage(finalize, deallocating_hosts, #{deallocator:= Deallocator} = State)
             info("Deallocator has started", [], State),
             Deallocator(),
             ok
-        catch _C:E ->
-            ST = erlang:get_stacktrace(),
+        catch _C:E:ST ->
             error("Deallocation has failed with reason: ~p~nStacktrace: ~p", [E, ST], State),
             retry
         end
@@ -562,16 +561,14 @@ terminate(Reason, #{id:= Id} = State) ->
                                     Res = handle_stage(finalize, Stage, NewState),
                                     Res
                                 catch
-                                    _C:E ->
-                                        ST = erlang:get_stacktrace(),
-                                        error("Stage 'finalize - ~s': failed~n~s", [Stage, format_error(Stage, {E, ST})], NewState)
+                                    _C:E:ST ->
+                                        error("Stage 'finalize - ~ts': failed~n~ts", [Stage, format_error(Stage, {E, ST})], NewState)
                                 end
                             end, Stages),
 
                 timer:cancel(Timer)
             catch
-                Class:Error ->
-                    Stacktrace= erlang:get_stacktrace(),
+                Class:Error:Stacktrace ->
                     lager:error("Finalizing process for #~p has crashed with reason: ~p~n~p", [Id, Error, Stacktrace]),
                     erlang:raise(Class, Error, Stacktrace)
             end
@@ -591,25 +588,25 @@ maybe_update_bench(State = #{previous_status:= OldStatus}) ->
     end.
 
 handle_pipeline_status_ll({start, Phase, Stage}, State) ->
-    info("Stage '~s - ~s': started", [Phase, Stage], State),
+    info("Stage '~ts - ~ts': started", [Phase, Stage], State),
     case Phase of
         pipeline -> State#{status => Stage};
         _ -> State
     end;
 handle_pipeline_status_ll({complete, Phase, Stage}, State) ->
-    info("Stage '~s - ~s': finished", [Phase, Stage], State),
+    info("Stage '~ts - ~ts': finished", [Phase, Stage], State),
     State;
 handle_pipeline_status_ll({exception, Phase, Stage, E, ST}, #{result_str:= ResStr} = State) ->
-    error("Stage '~s - ~s': failed~n~s", [Phase, Stage, format_error(Stage, {E, ST})], State),
+    error("Stage '~ts - ~ts': failed~n~ts", [Phase, Stage, format_error(Stage, {E, ST})], State),
     case ResStr of
         "" ->
-            Res = mzb_string:format("Stage ~p failed: ~p", [Stage, E]),
+            Res = mzb_string:format("Stage ~p failed: ~tp", [Stage, E]),
             State#{result_str => Res};
         _ ->
             State
     end;
 handle_pipeline_status_ll({final, Final}, State) ->
-    info("Bench final: ~s", [Final], State),
+    info("Bench final: ~ts", [Final], State),
     State#{status => Final, finish_time => seconds()}.
 
 %%%===================================================================
@@ -667,7 +664,7 @@ send_email_report(Emails, #{id:= Id,
         MetricNames = mzb_api_metrics:extract_metric_names(Metrics),
         MetricFilenames = [metrics_file(N, Config) || N <- MetricNames],
         {Subj, Body} = generate_mail_body(Id, Status, Config),
-        lager:info("EMail report: ~n~s~n~s~n", [Subj, Body]),
+        lager:info("EMail report: ~n~ts~n~ts~n", [Subj, Body]),
         Attachments = lists:map(
             fun (F) ->
                 {ok, Bin} = file:read_file(local_path(F, Config)),
@@ -676,14 +673,14 @@ send_email_report(Emails, #{id:= Id,
             end, MetricFilenames),
         lists:foreach(
             fun (Addr) ->
-                lager:info("Sending bench results to ~s", [Addr]),
+                lager:info("Sending bench results to ~ts", [Addr]),
                 BAddr = list_to_binary(Addr),
                 mzb_api_mail:send(BAddr, Subj, Body, Attachments, application:get_env(mzbench_api, mail, []))
             end, Emails),
         ok
     catch
-        _:Error ->
-            {error, {Error, erlang:get_stacktrace()}}
+        _:Error:ST ->
+            {error, {Error, ST}}
     end;
 send_email_report(_Emails, Status) ->
     {error, {badarg, Status}}.
@@ -817,15 +814,15 @@ init_data_dir(Config) ->
 generate_mail_body(Id, Status, Config) ->
     #{env:= Env, script:= Script} = Config,
     #{name := ScriptName, body := ScriptBody} = Script,
-    Subject = io_lib:format("Bench report for ~s (~s)", [ScriptName, Status]),
-    Chars = io_lib:format(
-        "Status: ~s~n~n"
-        "Environment:~n~s~n~n"
-        "Script body:~n~s~n~n"
-        "Benchmark logs:~n  ~s~n~n"
-        "Metrics data:~n  ~s~n~n",
+    Subject = mzb_string:format("Bench report for ~ts (~ts)", [ScriptName, Status]),
+    Chars = mzb_string:format(
+        "Status: ~ts~n~n"
+        "Environment:~n~ts~n~n"
+        "Script body:~n~ts~n~n"
+        "Benchmark logs:~n  ~ts~n~n"
+        "Metrics data:~n  ~ts~n~n",
         [Status,
-         indent(string:join([io_lib:format("~p = ~p", [K,V]) || {K,V} <- Env], "\n"), 2, "(no env variables)"),
+         indent(string:join([mzb_string:format("~p = ~p", [K,V]) || {K,V} <- Env], "\n"), 2, "(no env variables)"),
          indent(ScriptBody, 2),
          bench_log_link(Id, Config),
          bench_data_link(Id, Config)
@@ -833,10 +830,10 @@ generate_mail_body(Id, Status, Config) ->
     {list_to_binary(Subject), list_to_binary(Chars)}.
 
 bench_data_link(Id, #{req_host:= ServerAddr}) ->
-    io_lib:format("http://~s/data?id=~b", [ServerAddr, Id]).
+    mzb_string:format("http://~ts/data?id=~b", [ServerAddr, Id]).
 
 bench_log_link(Id, #{req_host:= ServerAddr}) ->
-    io_lib:format("http://~s/logs?id=~b", [ServerAddr, Id]).
+    mzb_string:format("http://~ts/logs?id=~b", [ServerAddr, Id]).
 
 indent("", N, Default) -> indent(Default, N);
 indent(Str, N, _) -> indent(Str, N).
@@ -865,13 +862,13 @@ format_log(_Handler, debug, _Format, _Args) -> ok;
 format_log(Handler, Severity, Format, Args) ->
     Now = {_, _, Ms} = os:timestamp(),
     {_, {H,M,S}} = calendar:now_to_universal_time(Now),
-    _ = Handler({write, io_lib:format("~2.10.0B:~2.10.0B:~2.10.0B.~3.10.0B [~s] [ API ] ~p " ++ Format ++ "~n", [H, M, S, Ms div 1000, Severity, self()|Args])}),
+    _ = Handler({write, mzb_string:format("~2.10.0B:~2.10.0B:~2.10.0B.~3.10.0B [~ts] [ API ] ~p " ++ Format ++ "~n", [H, M, S, Ms div 1000, Severity, self()|Args])}),
     ok.
 
 format_error(_, {{cmd_failed, Cmd, Code, Output}, _}) ->
-    io_lib:format("Command returned ~b:~n ~s~nCommand output: ~s", [Code, Cmd, Output]);
+    mzb_string:format("Command returned ~b:~n ~ts~nCommand output: ~ts", [Code, Cmd, Output]);
 format_error(Op, {E, Stack}) ->
-    io_lib:format("Benchmark has failed on ~p with reason:~n~p~n~nStacktrace: ~p", [Op, E, Stack]).
+    mzb_string:format("Benchmark has failed on ~p with reason:~n~tp~n~nStacktrace: ~p", [Op, E, Stack]).
 
 get_env(K) -> application:get_env(mzbench_api, K, undefined).
 
@@ -880,7 +877,7 @@ generate_script_filename(#{name := _Name, body := Body} = Script) ->
         fun(Num) -> erlang:integer_to_list(Num, 16) end,
         erlang:binary_to_list(crypto:hash(sha, Body))
     )),
-    Script#{filename => mzb_string:format("~s.erl", [Name])}.
+    Script#{filename => mzb_string:format("~ts.erl", [Name])}.
 
 get_file_writer(Filename, none) ->
     {ok, H} = file:open(Filename, [write]),
@@ -945,11 +942,19 @@ deflate_process(Filename) ->
                 close -> Close();
                 flush -> _ = Flush(), D(N + 1);
                 {write_sync, From, Ref1, Data} ->
-                    _ = file:write(H, zlib:deflate(Z, Data, none)),
+                    DataBin = if
+                        is_list(Data) -> unicode:characters_to_binary(lists:flatten(Data));
+                        is_binary(Data) -> Data
+                    end,
+                    _ = file:write(H, zlib:deflate(Z, DataBin, none)),
                     From ! {write_res, Ref1, ok},
                     D(N + 1);
                 {write, Data} ->
-                    _ = file:write(H, zlib:deflate(Z, Data, none)),
+                    DataBin = if
+                        is_list(Data) -> unicode:characters_to_binary(lists:flatten(Data));
+                        is_binary(Data) -> Data
+                    end,
+                    _ = file:write(H, zlib:deflate(Z, DataBin, none)),
                     D(N + 1)
             end
     end (0).
@@ -1014,7 +1019,7 @@ handle_management_msg({error, _}, _, S = #{handlers:= Handlers}) ->
     {ok, S#{handlers => #{}}}.
 
 report_metrics(Name, Timestamp, Value, #{config:= Config, handlers:= Handlers} = S) ->
-    ToWrite = io_lib:format("~B\t~p~n", [Timestamp, Value]),
+    ToWrite = mzb_string:format("~B\t~p~n", [Timestamp, Value]),
     case maps:find(Name, Handlers) of
         {ok, H} -> {H({write, ToWrite}), S};
         error ->
@@ -1034,8 +1039,8 @@ aggregate_results(Metrics, Histograms, #{config:= Config} = State) ->
             try
                 aggregate_results_for_metric(M, Config, Percentiles, Histograms)
             catch
-                _:Error ->
-                    error("Aggregating result for ~p failed: ~p~nStacktrace: ~p", [M, Error, erlang:get_stacktrace()], State),
+                _:Error:ST ->
+                    error("Aggregating result for ~p failed: ~p~nStacktrace: ~p", [M, Error, ST], State),
                     []
             end
         end, Flatten),

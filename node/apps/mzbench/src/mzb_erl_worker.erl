@@ -123,7 +123,7 @@ load_config([]) ->
 load_config([File|T]) ->
     case file:consult(mzb_file:expand_filename(File)) of
         {ok, [Config]} ->
-            system_log:info("Reading configuration from ~s", [File]),
+            system_log:info("Reading configuration from ~ts", [File]),
             lists:foreach(fun({App, Env}) ->
                                   [application:set_env(App, Key, Val) || {Key, Val} <- Env]
                           end, Config),

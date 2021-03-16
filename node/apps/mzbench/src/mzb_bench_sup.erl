@@ -33,7 +33,7 @@ run_bench(ScriptPath, DefaultEnv) ->
 read_and_validate(Path, Env) ->
     case mzb_script_validator:read_and_validate(Path, Env) of
         {ok, Warnings, Body, NewEnv} ->
-            lists:foreach(fun (Msg) -> system_log:warning("~s", [Msg]) end, Warnings),
+            lists:foreach(fun (Msg) -> system_log:warning("~ts", [Msg]) end, Warnings),
             {Body, NewEnv};
         {error, _, _, _, Errors} -> erlang:error({error, Errors})
     end.

@@ -40,4 +40,4 @@ tmp_filename() -> tmp_filename("/tmp").
 tmp_filename(Dir) ->
     {N1,N2,N3} = erlang:now(),
     SafeNodeName = string:join(string:tokens(atom_to_list(node()), "@"), "_"),
-    filename:join([Dir, io_lib:format("bench_~s_~b_~b_~b", [SafeNodeName, N1, N2, N3])]).
+    filename:join([Dir, io_lib:format("bench_~ts_~b_~b_~b", [SafeNodeName, N1, N2, N3])]).

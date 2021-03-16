@@ -86,8 +86,8 @@ format_standalone_error({_, set_signal, N}) ->
 
 format_signal_deadlock_error(Cycle) ->
     FormatedCycle = [format_vertex(V) || V <- Cycle],
-    mzb_string:format("Deadlock is posible: ~s", [string:join(FormatedCycle, " -> ")]).
+    mzb_string:format("Deadlock is posible: ~ts", [string:join(FormatedCycle, " -> ")]).
 
 format_vertex({Pool, Op, Arg}) ->
-    io_lib:format("~s:~s(~p)", [Pool, Op, Arg]).
+    mzb_string:format("~ts:~ts(~p)", [Pool, Op, Arg]).
 

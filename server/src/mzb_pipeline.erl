@@ -172,11 +172,9 @@ handle_cast({workflow, start, Phase, Stage, Ref}, State = #state{ref = Ref, modu
                 StageResult = Module:handle_stage(Phase, Stage, UserState),
                 gen_server:cast(Self, {workflow, complete, Phase, Stage, Ref, StageResult})
             catch
-                C:{exception, E, Fn} ->
-                    ST = erlang:get_stacktrace(),
+                C:{exception, E, Fn}:ST ->
                     gen_server:cast(Self, {workflow, exception, Phase, Stage, Ref, {C, E, ST, Fn}});
-                C:E ->
-                    ST = erlang:get_stacktrace(),
+                C:E:ST ->
                     gen_server:cast(Self, {workflow, exception, Phase, Stage, Ref, {C, E, ST, undefined}})
             end
         end),

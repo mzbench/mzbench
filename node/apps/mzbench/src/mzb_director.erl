@@ -270,7 +270,7 @@ maybe_stop(#state{pools = [], succeed = Ok, failed = NOk, stopped = Stopped} = S
             [] -> normal;
             _ ->
                 AssertMessages = [Msg || {_, Msg} <- FailedAsserts],
-                system_log:error("[ director ] Failed assertions:~n~s", [string:join(AssertMessages, "\n")]),
+                system_log:error("[ director ] Failed assertions:~n~ts", [string:join(AssertMessages, "\n")]),
                 {assertions_failed, FailedAsserts}
         end,
     maybe_report_and_stop(State#state{stop_reason = Reason});
@@ -311,7 +311,7 @@ format_results(#state{stop_reason = {assertions_failed, dynamic_deadlock}}) ->
     {error, {asserts_failed, 1}, Str, get_stats_data()};
 format_results(#state{stop_reason = {assertions_failed, FailedAsserts}}) ->
     AssertsStr = string:join([S||{_, S} <- FailedAsserts], "\n"),
-    Str = mzb_string:format("~b assertions failed~n~s",
+    Str = mzb_string:format("~b assertions failed~n~ts",
                         [length(FailedAsserts), AssertsStr]),
     {error, {asserts_failed, length(FailedAsserts)}, Str, get_stats_data()};
 format_results(#state{stop_reason = {start_metrics_failed, E}}) ->
@@ -321,7 +321,7 @@ format_results(#state{stop_reason = {import_resource_error, File, Type, Error}})
     Str = mzb_string:format("File ~p import failed: ~p", [File, Error]),
     {error, {import_resource_error, File, Type, Error}, Str, {[], []}};
 format_results(#state{stop_reason = {var_is_unbound, Var}}) ->
-    Str = mzb_string:format("Var '~s' is not defined", [Var]),
+    Str = mzb_string:format("Var '~ts' is not defined", [Var]),
     {error, {var_is_unbound, Var}, Str, {[], []}};
 format_results(#state{stop_reason = Reason}) ->
     Str = mzb_string:format("~p", [Reason]),
@@ -339,5 +339,5 @@ get_stats_data() ->
 
 compile_and_load(Script, Env) ->
     {NewScript, ModulesToLoad} = mzb_compiler:compile(Script, Env),
-    [{module, _} = code:load_binary(Mod, mzb_string:format("~s.erl", [Mod]), Bin) || {Mod, Bin} <- ModulesToLoad],
+    [{module, _} = code:load_binary(Mod, mzb_string:format("~ts.erl", [Mod]), Bin) || {Mod, Bin} <- ModulesToLoad],
     {ok, NewScript}.

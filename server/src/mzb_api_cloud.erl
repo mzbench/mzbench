@@ -37,9 +37,9 @@ destroy_cluster(Id) ->
                 gen_server:call(?MODULE, {deallocated, Id}, infinity),
                 ok
             catch
-                C:E ->
+                C:E:ST ->
                     gen_server:call(?MODULE, {deallocation_failed, Id, E}, infinity),
-                    erlang:raise(C, E, erlang:get_stacktrace())
+                    erlang:raise(C, E, ST)
             end;
         {error, Error} ->
             erlang:error(Error)
@@ -88,9 +88,9 @@ handle_call({get_allocator, BenchId, Cloud, N, Config}, _From, State = #{cluster
                         gen_server:call(Self, {allocated, Id, Cluster, User, Hosts}, infinity),
                         {ok, Id, User, Hosts}
                     catch
-                        C:E ->
+                        C:E:ST ->
                             gen_server:call(Self, {allocation_failed, Id, E}, infinity),
-                            erlang:raise(C, E, erlang:get_stacktrace())
+                            erlang:raise(C, E, ST)
                     end
                 end,
             {reply, {ok, F}, State#{cluster_id:= Id + 1}};

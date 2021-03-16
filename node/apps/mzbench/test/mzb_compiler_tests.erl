@@ -98,7 +98,7 @@ compile_check(Input, Env) ->
     AST = mzbl_script:parse(Input),
     {NewScript, Modules} = mzb_compiler:compile(AST, Env),
     lists:foreach(fun ({Mod, Bin}) ->
-            {module, _} = code:load_binary(Mod, mzb_string:format("~s.erl", [Mod]), Bin)
+            {module, _} = code:load_binary(Mod, mzb_string:format("~ts.erl", [Mod]), Bin)
         end, Modules),
     NewScript.
 

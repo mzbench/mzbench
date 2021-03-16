@@ -1,7 +1,7 @@
 -module(mzb_string).
 
 -export([
-    format/2,
+    format/2, format/1,
     char_substitute/3,
     wildcard_to_regexp/1,
     iso_8601_fmt/1,
@@ -29,6 +29,9 @@ unescape_ascii([]) -> [].
 -spec format(Format :: string(), Args :: [term()]) -> FlatString :: string().
 format(Format, Args) ->
     lists:flatten(io_lib:format(Format, Args)).
+
+format(Formats) ->
+    lists:flatten(lists:map(fun({Format, Args}) -> io_lib:format(Format, Args) end, Formats)).
 
 -spec char_substitute(string(), char(), char()) -> string().
 char_substitute(String, OldChar, NewChar) ->

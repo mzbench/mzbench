@@ -111,7 +111,7 @@ terminate(_Reason, _Req, #state{ref = Ref}) ->
 websocket_handle({text, Msg}, Req, State) ->
     case dispatch_request(jiffy:decode(Msg, [return_maps]), State) of
         {reply, Reply, NewState} ->
-            JsonReply = jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8]),
+            JsonReply = unicode:characters_to_binary(jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8])),
             {reply, {text, JsonReply}, Req, NewState};
         {ok, NewState} ->
             {ok, Req, NewState}
@@ -123,7 +123,7 @@ websocket_handle(_Data, Req, State) ->
 websocket_info(Message, Req, State) ->
     case dispatch_info(Message, State) of
         {reply, Reply, NewState} ->
-            JsonReply = jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8]),
+            JsonReply = unicode:characters_to_binary(jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8])),
             {reply, {text, JsonReply}, Req, NewState};
         {ok, NewState} ->
             {ok, Req, NewState};
@@ -484,9 +484,9 @@ apply_update(Fun) ->
             Str =
                 case Exception of
                     {ReasonAtom, ReasonStr} when is_atom(ReasonAtom) -> ReasonStr;
-                    _ -> io_lib:format("~p", [Exception])
+                    _ -> mzb_string:format("~p", [Exception])
                 end,
-            mzb_api_firehose:notify(danger, mzb_string:format("~s", [Str]))
+            mzb_api_firehose:notify(danger, mzb_string:format("~ts", [Str]))
     end.
 
 disk_status() ->
@@ -657,7 +657,7 @@ get_finals(Pid, StreamId, BenchIds, MetricName, Kind, XEnv) ->
       lists:zip(lists:reverse(lists:seq(1, length(Sorted))),
           lists:map(fun ({_, B}) -> {B, B, B} end, Sorted));
       true -> aggregate(Sorted) end,
-    Values = lists:foldl(fun({X, {Min, Avg, Max}}, Acc) -> [io_lib:format("~p\t~p\t~p\t~p~n", [X, Avg, Min, Max]) |Acc] end, [], Aggregated),
+    Values = lists:foldl(fun({X, {Min, Avg, Max}}, Acc) -> [mzb_string:format("~p\t~p\t~p\t~p~n", [X, Avg, Min, Max]) |Acc] end, [], Aggregated),
     Pid ! {metric_value, StreamId, Values},
     Pid ! {metric_batch_end, StreamId}.
 
@@ -754,8 +754,8 @@ filter_dashboards(List, Query) ->
           {match, _} -> true;
                    _ -> false
         end end, List)
-    catch _:Error ->
-        lager:error("Failed to apply dashboard filter: ~p ~p~n Query: ~p -- List ~p", [Error, erlang:get_stacktrace(), Query, List]),
+    catch _:Error:ST ->
+        lager:error("Failed to apply dashboard filter: ~p ~p~n Query: ~p -- List ~p", [Error, ST, Query, List]),
         []
     end.
 
@@ -807,8 +807,8 @@ is_satisfy_fields(Query, BenchInfo) ->
                       ({exact, Field}) ->
                           Field == Query
                   end, SearchFields)
-    catch _:Error ->
-        lager:error("Failed to apply filter: ~p ~p~n Query: ~p -- BenchInfo ~p", [Error, erlang:get_stacktrace(), Query, BenchInfo]),
+    catch _:Error:ST ->
+        lager:error("Failed to apply filter: ~p ~p~n Query: ~p -- BenchInfo ~p", [Error, ST, Query, BenchInfo]),
         false
     end.
 
@@ -941,7 +941,7 @@ stream_metric(Id, Metric, StreamParams, SendFun) ->
     try
         PollTimeout = application:get_env(mzbench_api, bench_poll_timeout, undefined),
         perform_streaming(Id, FileReader, SendFun, StreamParams#stream_parameters{metric_report_interval_sec = ReportIntervalMs div 1000}, PollTimeout),
-        lager:debug("Streamer for #~b ~s has finished", [Id, Metric])
+        lager:debug("Streamer for #~b ~ts has finished", [Id, Metric])
     after
         FileReader(close)
     end.
@@ -1057,14 +1057,14 @@ perform_subsampling(SubsamplingInterval, LastSentValueTimestamp, PreviousSumForM
 
             case LastRetainedTime of
                 undefined -> {ValueTimestamp, 0, 0, undefined, undefined, [
-                        io_lib:format("~p\t~p\t~p\t~p~n",
+                        mzb_string:format("~p\t~p\t~p\t~p~n",
                             [ValueTimestamp, Value, NewMinValue, NewMaxValue]) | Acc]};
                 Timestamp ->
                     Interval = ValueTimestamp - Timestamp,
                     case Interval < SubsamplingInterval of
                         true -> {LastRetainedTime, SumForMean + Value, NumValuesForMean + 1, NewMinValue, NewMaxValue, Acc};
                         false -> {ValueTimestamp, 0, 0, undefined, undefined,
-                                    [io_lib:format("~p\t~p\t~p\t~p~n",
+                                    [mzb_string:format("~p\t~p\t~p\t~p~n",
                                         [ValueTimestamp, (SumForMean + Value)/(NumValuesForMean + 1), NewMinValue, NewMaxValue]) | Acc]}
                     end
             end

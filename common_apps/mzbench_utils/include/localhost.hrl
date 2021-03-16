@@ -1,0 +1,1 @@
+-define(IS_LOCALHOST(Host), Host == "127.0.0.1" orelse Host == "localhost").

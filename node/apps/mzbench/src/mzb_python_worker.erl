@@ -81,7 +81,7 @@ validate(_WorkerName) -> [].
 validate_function(Worker, Func, _Arity) ->
     Python = mzb_py:start_interpreter(Worker),
     try
-        ModuleFuncs = mzb_py:eval(Python, mzb_string:format("mzbench._module_funcs(~s)", [Worker])),
+        ModuleFuncs = mzb_py:eval(Python, mzb_string:format("mzbench._module_funcs(~ts)", [Worker])),
         case lists:member(atom_to_list(Func), ModuleFuncs) of
             true -> ok;
             false -> not_found

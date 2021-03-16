@@ -55,14 +55,12 @@ read_from_string(String) ->
     try
         mzbl_literals:convert(parse(String))
     catch
-        C:{parse_error, {_, _, ErrorInfo}} = E ->
-            ST = erlang:get_stacktrace(),
-            lager:error("Parsing script file failed: ~s", [erl_parse:format_error(ErrorInfo)]),
+        C:{parse_error, {_, _, ErrorInfo}} = E:ST ->
+            lager:error("Parsing script file failed: ~ts", [erl_parse:format_error(ErrorInfo)]),
             erlang:raise(C,E,ST);
-        C:E ->
-            ST = erlang:get_stacktrace(),
+        C:E:ST ->
             lager:error(
-                "Failed to read script '~p' 'cause of ~p~nStacktrace: ~s",
+                "Failed to read script '~p' 'cause of ~p~nStacktrace: ~ts",
                 [String, E, pretty_errors:stacktrace(ST)]),
             erlang:raise(C,E,ST)
     end.
@@ -72,10 +70,9 @@ read(Path) ->
     try
         read_from_string(read_file(Path))
     catch
-        C:E ->
-            ST = erlang:get_stacktrace(),
+        C:E:ST ->
             lager:error(
-                "Failed to read script: ~p 'cause of ~p~nStacktrace: ~s",
+                "Failed to read script: ~p 'cause of ~p~nStacktrace: ~ts",
                 [Path, E, pretty_errors:stacktrace(ST)]),
             erlang:raise(C,E,ST)
     end.

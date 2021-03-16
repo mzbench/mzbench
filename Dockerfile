@@ -1,4 +1,4 @@
-FROM erlang:20.3.2-alpine
+FROM erlang:23-alpine
 
 # install packages
 RUN apk update && apk add --no-cache \
@@ -11,10 +11,11 @@ RUN apk update && apk add --no-cache \
     net-tools \
     openssh openssh-server \
     openssl \
-    py2-pip \
+    py-pip \
     rsync \
     wget \
     zlib-dev \
+    linux-headers \
     ;
 
 # Download kubectl
@@ -26,10 +27,14 @@ RUN wget -O /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/r
 
 WORKDIR /opt/mzbench
 COPY . .
+
+# Install rebar3
+RUN ./bin/rebar3 local install
+
 # Clean sources just in case you build smth in the same folder
 RUN  make -C /opt/mzbench/server clean \
  && make -C /opt/mzbench/node clean \
- && find . -name "*.so" -or -name "*.o" | xargs -I{} rm {}
+ && find . -name "*.so" -or -name "*.o" -name "*.beam" | xargs -I{} rm {}
 
 # Compile and configure server
 RUN pip install -r requirements.txt \
