@@ -369,9 +369,9 @@ build_package_on_host(Host, User, RemoteTarballPath, InstallSpec, Logger) ->
             case ?IS_LOCALHOST(Host) of
                 true ->
                     mzb_subprocess:exec_format([
-                        {"cd ~ts && ./scripts/prepare_sources.sh", [ RemoteAbs ]},
+                        {"cd ~ts && if [ -e ./scripts/prepare_sources.sh ]; then ./scripts/prepare_sources.sh; fi", [ RemoteAbs ]},
                         {"mkdir -p ~ts", [ TargetFolder ]},
-                        {"rsync -aWl -v ~ts ~ts/prepared_sources/ ~ts/node/", [ RSyncExcludes, RemoteAbs, TargetFolder ] }
+                        {"if [ -e ./scripts/prepare_sources.sh ]; then rsync -aWl -v ~ts ~ts/prepared_sources/ ~ts/; else rsync -aWl -v ~ts ~ts/ ~ts/; fi", [ RSyncExcludes, RemoteAbs, MainFolder, RSyncExcludes, RemoteAbs, MainFolder ] }
                     ], Logger),
                     %%mzb_subprocess:exec_format([
                     Cmd = mzb_string:format([
