@@ -3,5 +3,5 @@
   {description, ""},
   {vsn, "1.0.0"},
   {registered, []},
-  {applications, [kernel, stdlib, erlexec, erl_interface ]}
+  {applications, [kernel, stdlib, erlexec ]}
  ]}.
