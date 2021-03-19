@@ -167,7 +167,7 @@ handle_info(trigger,
 
         State#state{net_stat_state = NetStat}
     catch
-        C:E -> system_log:error("Exception while getting net stats: ~p~nStacktrace: ~p", [{C,E}, erlang:get_stacktrace()]),
+        C:E:ST -> system_log:error("Exception while getting net stats: ~p~nStacktrace: ~p", [{C,E}, ST]),
         State
     end,
 

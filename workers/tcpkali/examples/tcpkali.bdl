@@ -1,5 +1,5 @@
 #!benchDL
-make_install(git = "https://github.com/satori-com/mzbench.git",
+make_install(git = "https://github.com/mzbench/mzbench.git",
              dir = "workers/tcpkali")
 
 pool(size = numvar("nodes_num"), worker_type = tcpkali_worker):

@@ -44,7 +44,7 @@ catch_init({Provider, Worker}) ->
     try Provider:init(Worker) of
         InitialState -> {ok, InitialState}
     catch
-        C:E -> {exception, {C, E, erlang:get_stacktrace()}}
+        C:E:ST -> {exception, {C, E, ST}}
     end.
 
 catch_terminate({ok, Res}, {WorkerProvider, _}, WorkerState) ->
@@ -52,8 +52,8 @@ catch_terminate({ok, Res}, {WorkerProvider, _}, WorkerState) ->
         WorkerProvider:terminate(Res, WorkerState),
         {ok, Res}
     catch
-        Class:Error ->
-            {exception, node(), {Class, Error, erlang:get_stacktrace()}, WorkerState}
+        Class:Error:ST ->
+            {exception, node(), {Class, Error, ST}, WorkerState}
     end;
 catch_terminate({exception, Spec}, _, unknown) ->
     %% do not call terminate in this case because worker provider
@@ -64,8 +64,7 @@ catch_terminate({exception, Spec}, {WorkerProvider, _}, WorkerState) ->
         WorkerProvider:terminate(Spec, WorkerState),
         {exception, node(), Spec, WorkerState}
     catch
-        Class:Error ->
-            ST = erlang:get_stacktrace(),
+        Class:Error:ST ->
             {exception, node(), {Class, Error, ST}, unknown}
     end.
 

@@ -121,8 +121,8 @@ is_node_ready(Node) ->
             false -> false
         end
     catch
-        _:E ->
-            io:format("is_node_ready exception: ~p~n~p", [E, erlang:get_stacktrace()]),
+        _:E:ST ->
+            io:format("is_node_ready exception: ~p~n~p", [E, ST]),
             false
     end,
 

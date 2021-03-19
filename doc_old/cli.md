@@ -102,6 +102,9 @@ Optional params:
 `--provision_nodes false`
 :   Skip MZBench installation on the nodes.
 
+`--provision_workers false`
+:   Skip Workers installation on the nodes.
+
 `--node_commit=<commit>`
 :   Commit hash or branch name in the MZBench repository pointing to the MZBench version to install on the nodes.
 

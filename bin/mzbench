@@ -34,6 +34,7 @@ Usage:
     [--node_commit=<commit>]
     [--deallocate_after_bench=<deallocate_after_bench>]
     [--provision_nodes=<provision_nodes>]
+    [--provision_workers=<provision_workers>]
     [--name=<benchmark_name>]
     [--cloud=<cloud_provider_name>]
     [--tags=<tags>]
@@ -111,6 +112,11 @@ Options:
                      to "true" indicates to perform nodes provision. Disabling
                      it is useful when reusing already preallocated and
                      provisioned nodes.
+    --provision_workers <provision_workers>
+                     Either "true" or "false". Default is "true". Setting this
+                     to "true" indicates to perform workers provision. Disabling
+                     it is useful when reusing already preallocated and
+                     provisioned workers.
     --name <benchmark_name>
                      Set benchmark name.
     --cloud <cloud_provider_name>
@@ -345,35 +351,36 @@ def pretty_print(data):
     print()
 
 def run(host, script_file, script_content, email, nodes, workers_per_node,
-        node_commit, deallocate_after_bench, provision_nodes,
+        node_commit, deallocate_after_bench, provision_nodes, provision_workers,
         name, cloud, tags, env, no_cert_check = False, exclusive = None):
     bench_id = start(host, script_file, script_content, email, node_commit,
-                     nodes, workers_per_node, deallocate_after_bench, provision_nodes,
-                     name, cloud, tags, env, no_cert_check, exclusive)
+        nodes, workers_per_node, deallocate_after_bench, provision_nodes,
+        provision_workers, name, cloud, tags, env, no_cert_check, exclusive)
     response = status(host, bench_id, wait=True, no_cert_check = no_cert_check)
     if response[u'status'] == u'failed':
         print('Bench failed')
         sys.exit(3)
 
 def start(host, script_file, script_content, email, node_commit, nodes,
-          workers_per_node, deallocate_after_bench, provision_nodes,
+          workers_per_node, deallocate_after_bench, provision_nodes, provision_workers,
           name, cloud, tags, env, no_cert_check = False, exclusive = None):
     try:
         response = api.start(host,
-                             script_file,
-                             script_content,
-                             emails=email,
-                             node_commit=node_commit,
-                             deallocate_after_bench=deallocate_after_bench,
-                             provision_nodes=provision_nodes,
-                             benchmark_name=name,
-                             cloud=cloud,
-                             tags=tags,
-                             env=env,
-                             nodes=nodes,
-                             workers_per_node=workers_per_node,
-                             no_cert_check=no_cert_check,
-                             exclusive=exclusive)
+            script_file,
+            script_content,
+            emails=email,
+            node_commit=node_commit,
+            deallocate_after_bench=deallocate_after_bench,
+            provision_nodes=provision_nodes,
+            provision_workers=provision_workers,
+            benchmark_name=name,
+            cloud=cloud,
+            tags=tags,
+            env=env,
+            nodes=nodes,
+            workers_per_node=workers_per_node,
+            no_cert_check=no_cert_check,
+            exclusive=exclusive)
         pretty_print(response)
         return response['id']
     except erl_terms.ParseError as e:
@@ -710,6 +717,11 @@ def augment_args(args):
     if args['--provision_nodes'] not in [None, 'true', 'false']:
         print("invalid value for --provision_nodes: {0}".format(
             args['--provision_nodes']))
+        sys.exit(4)
+
+    if args['--provision_workers'] not in [None, 'true', 'false']:
+        print("invalid value for --provision_workers: {0}".format(
+                args['--provision_workers']))
         sys.exit(4)
 
     script_file = args['<script_file>']

@@ -19,7 +19,7 @@ class MZBenchAPIException(Exception):
 
 def start(host, script_file, script_content,
           node_commit = None, nodes = None, workers_per_node = None, deallocate_after_bench = None,
-          provision_nodes = None, benchmark_name = None,
+          provision_nodes = None, provision_workers = None, benchmark_name = None,
           cloud = None, tags = None, emails=[], includes=[], env={}, no_cert_check = False,
           exclusive = None
         ):
@@ -41,6 +41,8 @@ def start(host, script_file, script_content,
     :type deallocate_after_bench: "true" or "false"
     :param provision_nodes: Install required software
     :type provision_nodes: "true" or "false"
+    :param provision_workers: Install workers
+    :type provision_workers: "true" or "false"
     :param benchmark_name: Set benchmark name
     :type benchmark_name: str or unicode
     :param cloud: Specify cloud provider to use
@@ -84,6 +86,8 @@ def start(host, script_file, script_content,
         params += [('deallocate_after_bench', deallocate_after_bench)]
     if provision_nodes is not None:
         params += [('provision_nodes', provision_nodes)]
+    if provision_workers is not None:
+        params += [('provision_workers', provision_workers)]
     if benchmark_name is not None:
         params += [('benchmark_name', benchmark_name)]
     if cloud is not None:

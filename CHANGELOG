@@ -1,3 +1,15 @@
+1 Apr 2020 Version 0.5.8
+ * Suport for OTP 21+
+ * Fix low disk space alert message for docker installation
+ * Add password to root user and set no password auth for ssh config
+
+11 Oct 2018 Version 0.5.7
+ * Fix k8s plugin issue when it would fail during cluster creation
+
+14 Sep 2018 Version 0.5.6
+ * Updated Docker buildings
+ * Fix k8s plugin worker installation
+
 22 May 2018 Version 0.5.5
  * Support for custom images with workers
 

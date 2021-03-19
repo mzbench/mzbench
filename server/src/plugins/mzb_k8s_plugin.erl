@@ -2,7 +2,7 @@
 
 -export([start/2, create_cluster/3, destroy_cluster/1]).
 
--define(POLL_INTERVAL, 2000).
+-define(POLL_INTERVAL, 1000).
 -define(MAX_POLL_COUNT, 150).
 
 % ===========================================================
@@ -49,8 +49,8 @@ create_cluster(PluginOpts, NumNodes, ClusterConfig) when is_integer(NumNodes), N
 
     try
         {ok, _} = create_rc(ID, Image, PodSpec, NumNodes),
-        {ok, PodData1} = get_pods(Context, Namespace, ["-l bench=" ++ BenchName]),
-        PodNames = get_pod_names(PodData1),
+        {ok, PodNames} = wait_pods_creation(Context, Namespace, BenchName, NumNodes, ?MAX_POLL_COUNT),
+        lager:info("Pods are created: ~p", [PodNames]),
         wait_pods_start(NumNodes, ID, PodNames, ?MAX_POLL_COUNT),
         lager:info("Pods are running ~p", [PodNames]),
         % IP addresses were not known before
@@ -125,34 +125,45 @@ run_kubectl(CmdList, ParseJson) ->
     end.
 
 
-get_pod_names(PodData) -> 
+get_pod_names(PodData) ->
     [ get_map_value(<<"metadata">>, <<"name">>, Pod) || Pod <- maps:get(<<"items">>, PodData) ].
 
-get_pod_ips(PodData) -> 
+get_pod_ips(PodData) ->
     [ get_map_value(<<"status">>, <<"podIP">>, Pod) || Pod <- maps:get(<<"items">>, PodData) ].
 
 % wait_pods_start will fail if len(Pods) < NumNodes
-wait_pods_start(_, _, _, C) when C < 0 -> erlang:error({ec2_error, cluster_start_timed_out});
+wait_pods_start(_, _, _, C) when C < 0 -> erlang:error({k8s_error, cluster_start_timed_out});
 wait_pods_start(0, _, _, _) -> [];
 wait_pods_start(N, ID, [H | T], C) ->
     {Context, Namespace, _} = ID,
     {ok, Res} = get_pods(Context, Namespace, [H]),
-    lager:info("Waiting pods result: ~p", [Res]),
+    lager:info("Waiting pods start: ~p", [Res]),
     case get_map_value(<<"status">>, <<"phase">>, Res) of
-        "Running" -> 
+        "Running" ->
             [H | wait_pods_start(N-1, ID, T, C - 1)];
-        _ -> 
+        _ ->
             timer:sleep(?POLL_INTERVAL),
             wait_pods_start(N, ID, T ++ [H], C - 1)
     end.
 
-wait_pods_ssh(_, C) when C < 0 -> erlang:error({ec2_error, cluster_ssh_start_timed_out});
+wait_pods_ssh(_, C) when C < 0 -> erlang:error({k8s_error, cluster_ssh_start_timed_out});
 wait_pods_ssh([], _) -> ok;
 wait_pods_ssh([H | T], C) ->
     lager:info("Checking port 22 on ~p", [H]),
     case gen_tcp:connect(H, 22, [], ?POLL_INTERVAL) of
         {ok, Socket} -> gen_tcp:close(Socket), wait_pods_ssh(T, C - 1);
         _ -> timer:sleep(?POLL_INTERVAL), wait_pods_ssh([H | T], C - 1)
+    end.
+
+wait_pods_creation(_, _, _, _, C) when C < 0 -> erlang:error({k8s_error, claster_creation_timed_out});
+wait_pods_creation(Context, Namespace, BenchName, NumNodes, C) ->
+    {ok, PodData1} = get_pods(Context, Namespace, ["-l bench=" ++ BenchName]),
+    PodNames = get_pod_names(PodData1),
+    case length(PodNames) == NumNodes of
+        true -> {ok, PodNames};
+        _ ->
+            timer:sleep(?POLL_INTERVAL),
+            wait_pods_creation(Context, Namespace, BenchName, NumNodes, C-1)
     end.
 
 get_map_value(Key1, Key2, Map) ->

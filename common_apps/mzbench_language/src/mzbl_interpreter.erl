@@ -21,7 +21,7 @@ eval(Expr, State, Env, WorkerProvider) ->
     try
         eval_(Expr, State, Env, WorkerProvider)
     catch
-        error:{mzbl_interpreter_runtime_error, _} = E:ST ->
+        error:{mzbl_interpreter_runtime_error, _}=E:ST ->
             erlang:raise(error, E, ST);
         E:R:ST ->
             erlang:raise(error, {mzbl_interpreter_runtime_error, {{E, R}, State}}, ST)

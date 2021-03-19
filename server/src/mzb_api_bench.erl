@@ -111,6 +111,7 @@ init([Id, Params]) ->
         env => mzbl_script:normalize_env(generate_bench_env(Id, Params)),
         deallocate_after_bench => maps:get(deallocate_after_bench, Params),
         provision_nodes => ProvisionNodes,
+        provision_workers => maps:get(provision_workers, Params),
         req_host => maps:get(req_host, Params),
         initial_user => maps:get(user, Params),
         director_host => undefined,
@@ -568,9 +569,9 @@ terminate(Reason, #{id:= Id} = State) ->
 
                 timer:cancel(Timer)
             catch
-                Class:Error:Stacktrace ->
-                    lager:error("Finalizing process for #~p has crashed with reason: ~p~n~p", [Id, Error, Stacktrace]),
-                    erlang:raise(Class, Error, Stacktrace)
+                Class:Error:ST ->
+                    lager:error("Finalizing process for #~p has crashed with reason: ~p~n~p", [Id, Error, ST]),
+                    erlang:raise(Class, Error, ST)
             end
         end),
     ok.

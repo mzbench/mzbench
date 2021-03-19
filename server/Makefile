@@ -7,17 +7,7 @@ SOURCES := $(shell find src dashboard test -name .eunit -prune -o -name node_mod
 MZBENCH_COMMON_SOURCES := $(wildcard ../common_apps/*/include/*) $(wildcard ../common_apps/*/src/*) $(wildcard ../common_apps/*/rebar.config)
 RELEASE_BINARY := _build/default/rel/$(SERVICE_NAME)/bin/$(SERVICE_NAME)
 
-define RPM_HELPER
-import glob
-import shutil
-import subprocess
-import os.path
-for file in glob.glob('../workers/*'):
-    subprocess.check_call(["make", "-C", file, "generate_tgz"])
-    worker_name = os.path.basename(file)
-    shutil.copyfile(file + "/" + worker_name + "_worker.tgz", "tmproot/opt/mzbench_api/cache/" + worker_name + "-someversion-someos.tgz")
-endef
-export RPM_HELPER
+TMP_ROOT:= $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))/tmproot
 
 .PHONY: compile
 compile: .make/compilation-up-to-date
@@ -26,23 +16,39 @@ compile: .make/compilation-up-to-date
 console: $(RELEASE_BINARY)
 	$(RELEASE_BINARY) console
 
+.PHONY: tmp-dir
+tmp-dir:
+	-rm -rf $(TMP_ROOT)
+	mkdir -p $(TMP_ROOT)/opt/mzbench_api/cache
+
+.PHONY: build-workers
+build-workers:
+	cd ../workers/ && \
+	for WORKER in * ; do \
+		make -C $${WORKER}/ generate_tgz && \
+		cp $${WORKER}/$${WORKER}_worker.tgz $(TMP_ROOT)/opt/mzbench_api/cache/$${WORKER}-someversion-someos.tgz ; \
+	done
+
+.PHONY: extract-workers
+extract-workers: tmp-dir build-workers
+	cd $(TMP_ROOT)/opt/mzbench_api/cache/ && \
+	for WORKER_TGZ in * ; do \
+		tar xzf $${WORKER_TGZ} -C ~/.local/share/mzbench_workers ; \
+	done
+
 .PHONY: rpm
-rpm: generate
+rpm: generate tmp-dir build-workers
 	echo "You need to disable custom_os_code_builds and auto_update_deployed_code to make your RPM work"
-	-rm -rf tmproot
-	mkdir -p tmproot/opt/
-	cp -R _build/default/rel/mzbench_api tmproot/opt
-	mkdir -p tmproot/opt/mzbench_api/cache
+	cp -R _build/default/rel/mzbench_api $(TMP_ROOT)/opt
 	make -C ../node generate_tgz
-	cp ../node/node.tgz tmproot/opt/mzbench_api/cache/node-someversion-someos.tgz
-	python -c "$$RPM_HELPER"
+	cp ../node/node.tgz $(TMP_ROOT)/opt/mzbench_api/cache/node-someversion-someos.tgz
 	-git clone https://github.com/flussonic/epm _build/epm
 	EPM="-s dir --url http://github.com/machinezone/mzbench --description 'Benchmark server' \
 	-m 'Info <info@mz.com>' --vendor 'MZ' --license BSD"
-	cd tmproot && ../_build/epm/epm.erl -f -t deb -n mzbench -v 0.5.5 $(EPM) -a amd64 \
-	           --category net opt
-	cd tmproot && ../_build/epm/epm.erl -f -t rpm -n mzbench -v 0.5.5 $(EPM) -a amd64 \
-	           --category Server/Benchmark opt
+	cd $(TMP_ROOT) && ../_build/epm/epm.erl -f -t deb -n mzbench -v 0.5.8 $(EPM) -a amd64 \
+			   --category net opt
+	cd $(TMP_ROOT) && ../_build/epm/epm.erl -f -t rpm -n mzbench -v 0.5.8 $(EPM) -a amd64 \
+			   --category Server/Benchmark opt
 
 .PHONY: js-dev
 js-dev: compile
