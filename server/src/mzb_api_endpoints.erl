@@ -243,7 +243,7 @@ handle(<<"GET">>, <<"/userlog">>, _UserInfo, Req) ->
 handle(<<"GET">>, <<"/data">>, _UserInfo, Req) ->
     with_bench_id(Req, fun(Id) ->
         #{config:= Config, metrics:= Metrics} =
-            fun WaitMetricsCreations() ->
+            (fun WaitMetricsCreations() ->
                 #{status:= S} = Status = mzb_api_server:status(Id),
                 case lists:member(S, [running, stopped, complete, crashed, zombie]) of
                     true -> Status;
@@ -251,7 +251,7 @@ handle(<<"GET">>, <<"/data">>, _UserInfo, Req) ->
                         timer:sleep(1000),
                         WaitMetricsCreations()
                 end
-            end (),
+            end)(),
         MetricNames = mzb_api_metrics:extract_metric_names(Metrics),
         Filenames = [{N, mzb_api_bench:metrics_file(N, Config)} || N <- MetricNames],
         {ok, stream_metrics_from_files(Filenames, Id, Req), #{}}
