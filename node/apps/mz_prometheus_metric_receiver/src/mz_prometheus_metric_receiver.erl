@@ -47,4 +47,5 @@ load(State, _Meta, URL) ->
 metric_to_func("erlang") -> fun mz_prometheus_metrics:erlang_metrics/1;
 metric_to_func("mnesia") -> fun mz_prometheus_metrics:mnesia_metrics/1;
 metric_to_func("cowboy") -> fun mz_prometheus_metrics:cowboy_metrics/1;
+metric_to_func("linux_process") -> fun mz_prometheus_metrics:linux_process_metrics/1;
 metric_to_func(Any) -> error({ bad_metric_name, Any }).

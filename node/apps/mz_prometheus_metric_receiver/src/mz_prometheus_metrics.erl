@@ -4,7 +4,8 @@
 -export([
   erlang_metrics/1,
   mnesia_metrics/1,
-  cowboy_metrics/1
+  cowboy_metrics/1,
+  linux_process_metrics/1
 ]).
 
 erlang_metrics(Host) ->
@@ -69,6 +70,43 @@ cowboy_metrics(Host) ->
       ])}}
       % cowboy_request_duration_seconds histogram
       % cowboy_receive_body_duration_seconds histogram
+    ]}
+  ].
+
+linux_process_metrics(Host) ->
+  [
+    { group, "Process of Linux:" ++ Host, [
+      { graph, #{ title => "Open file descriptors", unit => "count", metrics => prepare(Host, [
+        "process_open_fds",
+        "process_max_fds"
+      ])}},
+      { graph, #{ title => "Uptime", unit => "seconds", metrics => prepare(Host, [
+        "process_uptime_seconds"
+      ])}},
+      { graph, #{ title => "Threads", unit => "count", metrics => prepare(Host, [
+        "process_threads_total"
+      ])}},
+      { graph, #{ title => "Memory", unit => "bytes", metrics => prepare(Host, [
+        "process_virtual_memory_bytes",
+        "process_resident_memory_bytes",
+        "process_max_resident_memory_bytes"
+      ])}},
+      { graph, #{ title => "CPU", unit => "seconds", metrics => prepare(Host, [
+        "process_cpu_seconds_total{kind=\"utime\"}",
+        "process_cpu_seconds_total{kind=\"stime\"}"
+      ])}},
+      { graph, #{ title => "Page/Swap/Context", unit => "count", metrics => prepare(Host, [
+        "process_noio_pagefaults_total",
+        "process_io_pagefaults_total",
+        "process_swaps_total",
+        "process_signals_delivered_total",
+        "process_voluntary_context_switches_total",
+        "process_involuntary_context_switches_total"
+      ])}},
+      { graph, #{ title => "Disk", unit => "count", metrics => prepare(Host, [
+        "process_disk_reads_total",
+        "process_disk_writes_total"
+      ])}}
     ]}
   ].
 
