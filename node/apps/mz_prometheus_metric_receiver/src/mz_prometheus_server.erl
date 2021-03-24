@@ -28,7 +28,7 @@ start_link(Interval, Url) ->
 
 enter_loop(Interval, URL) ->
   { ok, State } = init([ Interval, URL ]),
-  gen_server:enter_loop(?MODULE, server, [], State).
+  gen_server:enter_loop(?MODULE, [], State).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -72,9 +72,9 @@ tick(State) ->
 
 request(State) ->
   case httpc:request(get, { State#state.url, []}, [], [{ body_format, binary }]) of
-    {{ _, 200, _}, _, Body} ->
+    {ok, {{ _, 200, _}, _, Body}} ->
       parse(Body, State);
-    {{ _, Error, _ }, _, Body} ->
+    { ok, {{ _, Error, _ }, _, Body}} ->
       lager:error("Metrics server returned ~p:~s", [ Error, Body ]);
     { error, Reason} ->
       lager:error("Can't connect to metrics server: ~p", [ Reason ])
@@ -84,12 +84,20 @@ request(State) ->
 parse(Body, State) ->
   Lines = binary:split(Body, [<<"\n">>], [ global ]),
   Host = State#state.host ++ ".",
+  { ok, Re } = re:compile("^(.+(\{.*\})?) (.+)"),
   Metrics = lists:foldl(fun(Line, Acc) ->
     case Line of
+      <<>> -> Acc;
       <<"# ", _/binary>> -> Acc;
       _ ->
-        [ Name, Value ] = binary:split(Line, [<<" ">>], [ global ]),
-        [{ Host ++ binary_to_list(Name), binary_to_number(Value)} | Acc ]
+        [_,NamePart,_,ValuePart] = case re:run(Line, Re) of
+          { match, Any } -> Any;
+          nomatch ->
+            error({cant_process, Line })
+        end,
+        Name = binary:part(Line, NamePart),
+        Value = binary_to_number(binary:part(Line, ValuePart)),
+        [{ Host ++ binary_to_list(Name),Value } | Acc ]
     end
   end, [], Lines),
   lager:info("Metrics values ~p", [ Metrics ]),

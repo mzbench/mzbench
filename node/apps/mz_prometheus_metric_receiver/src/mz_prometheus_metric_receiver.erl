@@ -22,16 +22,17 @@
 %% MZBench worker behaviour
 
 initial_state() ->
-  ok.
+  #state{}.
 
 metrics() -> [].
 
 terminate_state(_Reason, _State) -> ok.
 
 enable_metrics(State, _Meta, MetricsList) ->
-  NewState = lists:foldl(fun(Name, Acc) ->
+  Metrics = lists:foldl(fun(Name, Acc) ->
     [ metric_to_func(Name) | Acc ]
   end, State#state.metrics_enable, MetricsList),
+  NewState = State#state{ metrics_enable = Metrics },
   { nil, NewState }.
 
 load(State, _Meta, URL) ->
