@@ -27,7 +27,7 @@ erlang_metrics(Host) ->
         "erlang_vm_memory_atom_bytes_total{usage=\"free\"}"
       ])}},
       { graph, #{ title => "Processes", unit => "count", metrics => prepare(Host, [
-        "erlang_vm_process_count"
+        "erlang_vm_process_count",
         "erlang_vm_process_limit"
       ])}},
       { graph, #{ title => "Processes memory", unit => "bytes", metrics => prepare(Host, [

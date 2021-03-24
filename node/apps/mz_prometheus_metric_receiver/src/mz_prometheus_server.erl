@@ -1,8 +1,8 @@
 -module(mz_prometheus_server).
 
 -export([
-  start_link/2,
-  enter_loop/2
+  start_link/3,
+  enter_loop/3
 ]).
 
 -behaviour(gen_server).
@@ -19,26 +19,25 @@
 
 -record(state, {
   interval :: pos_integer(),
-  host :: string(),
+  name :: string(),
   url :: string()
 }).
 
-start_link(Interval, Url) ->
-  gen_server:start_link(?MODULE, [ Interval, Url ], []).
+start_link(Name, URL, Interval) ->
+  gen_server:start_link(?MODULE, [ Name, URL, Interval ], []).
 
-enter_loop(Interval, URL) ->
-  { ok, State } = init([ Interval, URL ]),
+enter_loop(Name, URL, Interval) ->
+  { ok, State } = init([ Name, URL, Interval]),
   gen_server:enter_loop(?MODULE, [], State).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
-init([ Interval, URL ]) ->
-  #{ host := Host } = uri_string:parse(URL),
+init([ Name, URL, Interval ]) ->
   State = #state{
     interval = Interval,
-    host = Host,
+    name = Name ++ ".",
     url = URL
   },
   {ok, tick(State)}.
@@ -83,21 +82,22 @@ request(State) ->
 
 parse(Body, State) ->
   Lines = binary:split(Body, [<<"\n">>], [ global ]),
-  Host = State#state.host ++ ".",
+  RecName = State#state.name,
   { ok, Re } = re:compile("^(.+(\{.*\})?) (.+)"),
   Metrics = lists:foldl(fun(Line, Acc) ->
     case Line of
       <<>> -> Acc;
       <<"# ", _/binary>> -> Acc;
       _ ->
-        [_,NamePart,_,ValuePart] = case re:run(Line, Re) of
-          { match, Any } -> Any;
+        case re:run(Line, Re) of
+          { match, [_,NamePart,_,ValuePart] } ->
+            Name = binary:part(Line, NamePart),
+            Value = binary_to_number(binary:part(Line, ValuePart)),
+            [ {RecName ++ binary_to_list(Name),Value } | Acc ];
           nomatch ->
-            error({cant_process, Line })
-        end,
-        Name = binary:part(Line, NamePart),
-        Value = binary_to_number(binary:part(Line, ValuePart)),
-        [{ Host ++ binary_to_list(Name),Value } | Acc ]
+            logger:error("Prometheus metric receiver ~s: Cant_process metric line: ~s .It was ignored", [ RecName, Line ]),
+            Acc
+        end
     end
   end, [], Lines),
   lager:info("Metrics values ~p", [ Metrics ]),

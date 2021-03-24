@@ -8,7 +8,7 @@
 %% Worker commands
 -export([
   enable_metrics/3,
-  load/3
+  load/3, load/4
 ]).
 
 -define(REQUEST_INTERVAL, 1000).
@@ -35,14 +35,17 @@ enable_metrics(State, _Meta, MetricsList) ->
   NewState = State#state{ metrics_enable = Metrics },
   { nil, NewState }.
 
-load(State, _Meta, URL) ->
+load(State, Meta, URL) ->
   #{ host := Host } = uri_string:parse(URL),
+  load(State, Meta, Host, URL).
+
+load(State, _Meta, Name, URL) ->
   MetricFuncs = State#state.metrics_enable,
   Groups = lists:foldl(fun(Func, Acc) ->
-    Acc ++ Func(Host)
+    Acc ++ Func(Name)
   end, [], MetricFuncs),
   mzb_metrics:declare_metrics(Groups),
-  mz_prometheus_server:enter_loop(?REQUEST_INTERVAL, URL),
+  mz_prometheus_server:enter_loop(Name, URL, ?REQUEST_INTERVAL),
   { nil, State }.
 
 metric_to_func("erlang") -> fun mz_prometheus_metrics:erlang_metrics/1;
