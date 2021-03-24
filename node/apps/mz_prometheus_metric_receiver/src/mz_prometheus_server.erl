@@ -95,7 +95,7 @@ parse(Body, State) ->
             Value = binary_to_number(binary:part(Line, ValuePart)),
             [ {RecName ++ binary_to_list(Name),Value } | Acc ];
           nomatch ->
-            logger:error("Prometheus metric receiver ~s: Cant_process metric line: ~s .It was ignored", [ RecName, Line ]),
+            logger:error("Prometheus metric receiver ~s: Can't process metric line: ~s .It was ignored", [ RecName, Line ]),
             Acc
         end
     end
