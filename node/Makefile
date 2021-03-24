@@ -97,5 +97,7 @@ shell:
 	$(REBAR) shell
 
 .PHONY: local
-local:
-	cd ./scripts && ./run_local.escript ../example/test.bdl --env loop_rate=5
+SCRIPT?=../example/test.bdl
+ENV?= --env loop_rate=5
+local: compile
+	cd ./scripts && ./run_local.escript $(SCRIPT) $(ENV)

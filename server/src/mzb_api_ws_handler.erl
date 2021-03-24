@@ -378,7 +378,7 @@ dispatch_request(#{<<"cmd">> := <<"get_finals">>} = Cmd, State = #state{}) ->
         <<"kind">> := Kind,
         <<"x_env">> := XEnv} = Cmd,
     Self = self(),
-    spawn(fun() -> get_finals(Self, StreamId, BenchIds, MetricName, Kind, XEnv) end),
+    mzb_spawn:spawn(fun() -> get_finals(Self, StreamId, BenchIds, MetricName, Kind, XEnv) end),
     {ok, State};
 
 dispatch_request(#{<<"cmd">> := <<"start_streaming_metric">>} = Cmd, State = #state{}) ->
@@ -515,13 +515,13 @@ add_stream(StreamId, BenchId, MetricName, StreamParams, #state{metric_streams = 
     SendMetricsFun = fun ({data, Values}) -> Self ! {metric_value, StreamId, Values};
                          (batch_end)      -> Self ! {metric_batch_end, StreamId}
                      end,
-    Ref = erlang:spawn_monitor(fun() -> stream_metric(BenchId, MetricName, StreamParams, SendMetricsFun) end),
+    Ref = mzb_spawn:spawn_monitor(fun() -> stream_metric(BenchId, MetricName, StreamParams, SendMetricsFun) end),
     State#state{metric_streams = maps:put(StreamId, Ref, Streams)}.
 
 add_log_stream(BenchId, StreamId, #state{log_streams = Streams} = State) ->
     lager:debug("Starting streaming logs of the benchmark #~p, stream #~p", [BenchId, StreamId]),
     Pid = self(),
-    Ref = erlang:spawn_monitor(fun() -> stream_log(BenchId, StreamId, Pid) end),
+    Ref = mzb_spawn:spawn_monitor(fun() -> stream_log(BenchId, StreamId, Pid) end),
     State#state{log_streams = maps:put(StreamId, Ref, Streams)}.
 
 remove_stream(StreamId, Streams) ->

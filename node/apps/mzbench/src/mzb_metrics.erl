@@ -72,6 +72,7 @@ declare_metric(Group, Title, Name, Type, Opts) ->
             ]}
         ]).
 
+declare_metrics([]) -> ok;
 declare_metrics(Groups) ->
     case mzb_metrics_cache:check_cached_declare(Groups) of
         true -> ok;

@@ -55,7 +55,7 @@ handle_message({start_benchmark, ScriptPath, Env}, _) ->
     {reply, mzb_bench_sup:run_bench(ScriptPath, Env)};
 
 handle_message(get_results, ReplyFun) ->
-    _ = erlang:spawn(fun () -> ReplyFun(mzb_bench_sup:get_results()) end),
+    _ = mzb_spawn:spawn(fun () -> ReplyFun(mzb_bench_sup:get_results()) end),
     noreply;
 
 handle_message({read_and_validate, Path, Env}, _) ->

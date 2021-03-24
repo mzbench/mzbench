@@ -30,7 +30,7 @@ pmap(Fun, List) ->
     Self = self(),
     Refs = lists:map(fun (Element) ->
         Ref = erlang:make_ref(),
-        _ = erlang:spawn_link(fun () ->
+        _ = mzb_spawn:spawn_link(fun () ->
             Res = try
                 {Ref, {ok, Fun(Element)}}
             catch

@@ -166,18 +166,17 @@ handle_cast({workflow, next, PrevPhase, PrevStage, Ref}, State = #state{ref = Re
 
 handle_cast({workflow, start, Phase, Stage, Ref}, State = #state{ref = Ref, module = Module, user_state = UserState}) ->
     Self = self(),
-    Pid = spawn_link(
-        fun () ->
-            try
-                StageResult = Module:handle_stage(Phase, Stage, UserState),
-                gen_server:cast(Self, {workflow, complete, Phase, Stage, Ref, StageResult})
-            catch
-                C:{exception, E, Fn}:ST ->
-                    gen_server:cast(Self, {workflow, exception, Phase, Stage, Ref, {C, E, ST, Fn}});
-                C:E:ST ->
-                    gen_server:cast(Self, {workflow, exception, Phase, Stage, Ref, {C, E, ST, undefined}})
-            end
-        end),
+    Pid = mzb_spawn:spawn_link(fun() ->
+        try
+            StageResult = Module:handle_stage(Phase, Stage, UserState),
+            gen_server:cast(Self, {workflow, complete, Phase, Stage, Ref, StageResult})
+        catch
+            C:{exception, E, Fn}:ST ->
+                gen_server:cast(Self, {workflow, exception, Phase, Stage, Ref, {C, E, ST, Fn}});
+            C:E:ST ->
+                gen_server:cast(Self, {workflow, exception, Phase, Stage, Ref, {C, E, ST, undefined}})
+        end
+    end),
     NewState = change_pipeline_status({start, Phase, Stage}, State),
     {noreply, NewState#state{stage = {Pid, Phase, Stage}}};
 
