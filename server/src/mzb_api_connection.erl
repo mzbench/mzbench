@@ -8,7 +8,7 @@
 
 start_and_link_with(PidToLinkWith, Purpose, Host, Port, Dispatcher, State) ->
     Self = self(),
-    Pid = spawn(fun () ->
+    Pid = mzb_spawn:spawn(fun () ->
         link(PidToLinkWith),
         try gen_tcp:connect(Host, Port, [{active, false}, {packet, 4}, binary]) of
             {ok, Socket} ->

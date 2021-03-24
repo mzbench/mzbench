@@ -282,7 +282,7 @@ maybe_report_and_stop(#state{stop_reason = undefined} = State) ->
 maybe_report_and_stop(#state{stop_reason = server_connection_closed, continuation = Continuation} = State) ->
     Continuation(),
     system_log:error("[ director ] Stop benchmark because server connection is down"),
-    erlang:spawn(fun mzb_sup:stop_bench/0),
+    mzb_spawn:spawn(fun mzb_sup:stop_bench/0),
     {stop, normal, State};
 maybe_report_and_stop(#state{owner = undefined} = State) ->
     system_log:info("[ director ] Waiting for someone to report results..."),
@@ -292,7 +292,7 @@ maybe_report_and_stop(#state{owner = Owner, continuation = Continuation} = State
     system_log:info("[ director ] Reporting benchmark results to ~p", [Owner]),
     Res = format_results(State),
     gen_server:reply(Owner, Res),
-    erlang:spawn(fun mzb_sup:stop_bench/0),
+    mzb_spawn:spawn(fun mzb_sup:stop_bench/0),
     {stop, normal, State}.
 
 format_results(#state{stop_reason = normal, succeed = Ok, failed = 0, stopped = 0}) ->

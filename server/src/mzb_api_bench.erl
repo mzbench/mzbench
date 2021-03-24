@@ -888,7 +888,7 @@ get_file_writer(Filename, none) ->
             ok
     end;
 get_file_writer(Filename, deflate) ->
-    P = erlang:spawn_link(fun () -> deflate_process(Filename) end),
+    P = mzb_spawn:spawn_link(fun() -> deflate_process(Filename) end),
     fun (close) ->
             Ref = erlang:monitor(process, P),
             P ! close,
