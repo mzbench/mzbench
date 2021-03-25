@@ -26,6 +26,7 @@ add_pathsz(Module) ->
     CodeWildcards =
         [filename:join([D, Module, "ebin"])              || D <- WorkerDirs] ++
         [filename:join([D, Module, "deps", "*", "ebin"]) || D <- WorkerDirs] ++
+        [filename:join([D, Module, "_build/default/deps", "*", "ebin"]) || D <- WorkerDirs] ++
         [filename:join([D, Module, "lib" , "*", "ebin"]) || D <- WorkerDirs] ++
         [filename:join([D, Module, "apps", "*", "ebin"]) || D <- WorkerDirs],
 
