@@ -31,9 +31,13 @@
         Result
     end)()).
 
+-on_load(init/0).
+
+init() ->
+    application:set_env(hackney, use_default_pool, false).
+
 -spec initial_state() -> state().
 initial_state() ->
-    application:set_env(hackney, use_default_pool, false),
     #state{}.
 
 -spec metrics() -> list().
@@ -42,12 +46,14 @@ metrics() -> metrics("default").
 metrics(Prefix) ->
     [
         {group, "HTTP (" ++ Prefix ++ ")", [
-            {graph, #{title => "HTTP Response",
-                      units => "N",
-                      metrics => [{Prefix ++ ".http_ok", counter}, {Prefix ++ ".http_fail", counter}, {Prefix ++ ".other_fail", counter}]}},
-            {graph, #{title => "Latency",
-                      units => "microseconds",
-                      metrics => [{Prefix ++ ".latency", histogram}]}}
+            {graph, #{
+                title => "HTTP Response",
+                units => "N",
+                metrics => [{Prefix ++ ".http_ok", counter}, {Prefix ++ ".http_fail", counter}, {Prefix ++ ".other_fail", counter}]}},
+            {graph, #{
+                title => "Latency",
+                units => "microseconds",
+                metrics => [{Prefix ++ ".latency", histogram}]}}
         ]}
     ].
 
@@ -57,6 +63,7 @@ set_prefix(State, _Meta, NewPrefix) ->
     {nil, State#state{prefix = NewPrefix}}.
 
 -spec disconnect(state(), meta()) -> {nil, state()}.
+disconnect(State = #state{ connection = undefined }, _) -> { nil, State };
 disconnect(#state{connection = Connection} = State, _Meta) ->
     hackney:close(Connection),
     {nil, State}.
@@ -65,8 +72,13 @@ disconnect(#state{connection = Connection} = State, _Meta) ->
 connect(State, Meta, Host, Port) when is_list(Host) ->
     connect(State, Meta, list_to_binary(Host), Port);
 connect(State, _Meta, Host, Port) ->
-    {ok, ConnRef} = hackney:connect(hackney_tcp, Host, Port, []),
-    {nil, State#state{connection = ConnRef}}.
+    Connection = case hackney:connect(hackney_tcp, Host, Port, []) of
+        {ok, ConnRef} -> ConnRef;
+        { error, _ } ->
+            mzb_metrics:notify({prefix(State, ".other_fail"), counter}, 1),
+            undefined
+    end,
+    {nil, State#state{connection = Connection}}.
 
 -spec set_options(state(), meta(), http_options()) -> {nil, state()}.
 set_options(State, _Meta, NewOptions) ->
@@ -82,6 +94,7 @@ set_headers(State, _Meta, Headers) ->
     { nil, State#state{ headers = BinHeaders }}.
 
 -spec get(state(), meta(), string() | binary()) -> {nil, state()}.
+get(State = #state{ connection = undefined }, _, _) -> { nil, State };
 get(State, Meta, Endpoint) when is_list(Endpoint) ->
     get(State, Meta, list_to_binary(Endpoint));
 get(State, _Meta, Endpoint) ->
@@ -89,12 +102,13 @@ get(State, _Meta, Endpoint) ->
         connection = Connection,
         headers = Headers
     } = State,
-    logger:info("Request"),
+    % logger:info("Request"),
     Response = ?TIMED(prefix(State, ".latency"), hackney:send_request(Connection,
         {get, Endpoint, Headers, <<>>})),
     {nil, record_response(Response, State)}.
 
 -spec post(state(), meta(), string() | binary(), iodata()) -> {nil, state()}.
+post(State = #state{ connection = undefined }, _, _, _) -> { nil, State };
 post(State, Meta, Endpoint, Payload) when is_list(Endpoint) ->
     post(State, Meta, list_to_binary(Endpoint), Payload);
 post(State, _Meta, Endpoint, Payload) ->
@@ -107,6 +121,7 @@ post(State, _Meta, Endpoint, Payload) ->
     {nil, record_response(Response, State)}.
 
 -spec put(state(), meta(), string() | binary(), iodata()) -> {nil, state()}.
+put(State = #state{ connection = undefined }, _, _, _) -> { nil, State };
 put(State, Meta, Endpoint, Payload) when is_list(Endpoint) ->
     put(State, Meta, list_to_binary(Endpoint), Payload);
 put(State, _Meta, Endpoint, Payload) ->
@@ -117,6 +132,8 @@ put(State, _Meta, Endpoint, Payload) ->
     Response = ?TIMED(prefix(State, ".latency"), hackney:send_request(Connection,
         {put, Endpoint, Headers, Payload})),
     {nil, record_response(Response, State)}.
+
+% Internal
 
 record_response(Response, State) ->
     case Response of
