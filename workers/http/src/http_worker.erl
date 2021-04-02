@@ -5,8 +5,10 @@
 ]).
 
 -export([
-    connect/4, disconnect/2,
+    connect/4, connect_https/4,
+    disconnect/2,
     set_options/3, set_headers/3,
+    set_timeout/3,
     get/3, post/4, put/4, set_prefix/3
 ]).
 
@@ -17,7 +19,8 @@
     connection = undefined,
     prefix = "default",
     headers = [] :: [{HeaderName :: binary(), Value :: binary()}],
-    options = [] :: http_options()
+    options = [] :: http_options(),
+    def_options = #{} :: maps()
 }).
 
 -type state() :: #state{}.
@@ -72,6 +75,18 @@ disconnect(#state{connection = Connection} = State, _Meta) ->
 connect(State, Meta, Host, Port) when is_list(Host) ->
     connect(State, Meta, list_to_binary(Host), Port);
 connect(State, _Meta, Host, Port) ->
+    Connection = case hackney:connect(hackney_ssl, Host, Port, []) of
+        {ok, ConnRef} -> ConnRef;
+        { error, _ } ->
+            mzb_metrics:notify({prefix(State, ".other_fail"), counter}, 1),
+            undefined
+    end,
+    {nil, State#state{connection = Connection}}.
+
+-spec connect(state(), meta(), string() | binary(), integer()) -> {nil, state()}.
+connect_https(State, Meta, Host, Port) when is_list(Host) ->
+    connect_https(State, Meta, list_to_binary(Host), Port);
+connect_https(State, _Meta, Host, Port) ->
     Connection = case hackney:connect(hackney_tcp, Host, Port, []) of
         {ok, ConnRef} -> ConnRef;
         { error, _ } ->
@@ -80,10 +95,15 @@ connect(State, _Meta, Host, Port) ->
     end,
     {nil, State#state{connection = Connection}}.
 
+set_timeout(State, _Meta, Timeout) ->
+    NewState = set_def_option(State, recv_timeout, Timeout),
+    { nil, NewState }.
+
 -spec set_options(state(), meta(), http_options()) -> {nil, state()}.
 set_options(State, _Meta, NewOptions) ->
-    ok = hackney:setopts(State#state.connection, NewOptions),
-    {nil, State}.
+    Opts = merge_options(State, NewOptions),
+    ok = hackney:setopts(State#state.connection, Opts),
+    {nil, State#state{ options = Opts }}.
 
 set_headers(State, _Meta, Headers) ->
     BinHeaders = lists:map(fun(Header) ->
@@ -153,3 +173,19 @@ record_response(Response, State) ->
 
 prefix(State, Suffix) ->
     State#state.prefix ++ Suffix.
+
+set_def_option(State, Name, Value) ->
+    DefOpt = State#state.def_options,
+    Opts = merge_options(State, [{Name, Value}]),
+    case State#state.connection of
+        undefined -> ok;
+        Conn ->
+            ok = hackney:setopts(Conn, Opts)
+    end,
+    State#state{
+        def_options = maps:put(Name, Value, DefOpt),
+        options = Opts
+    }.
+
+merge_options(State, Options) ->
+    maps:to_list(maps:merge(State#state.def_options, maps:from_list(Options))).

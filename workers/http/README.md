@@ -7,6 +7,15 @@ Bellow is supported BDL-methods
 ## connect
 
 	connect("mywebserver.com", 80)
+	
+Connect as http.
+
+## connect_https
+
+	connect_https("mywebserver.com", 443)
+	
+Connect as https.
+
 
 ## disconnect
 
