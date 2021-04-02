@@ -1,0 +1,13 @@
+{application, mz_prometheus_metric_receiver, [
+  {description, "Receiver of metrics from tested clients"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+    kernel,
+    stdlib,
+    inets,
+    lager
+  ]},
+%%  {mod, {prometheus_metric_receiver_app, []}},
+  {env, []}
+]}.

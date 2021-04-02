@@ -22,7 +22,7 @@
 start_interpreter(Module) ->
     {MetricsPipeName, MetricsPipe} = create_fifo(Module),
     PythonExec = os:find_executable("python"),
-    PythonPort = open_port({spawn, io_lib:format("~s -i", [PythonExec])}, [
+    PythonPort = open_port({spawn, mzb_string:format("~ts -i", [PythonExec])}, [
         {line, 255},
         {env, [
             {"MZ_PYTHON_WORKER_FIFO_NAME", MetricsPipeName}
@@ -44,12 +44,12 @@ start_interpreter(Module) ->
     port_command(PythonPort, "import os\n"),
 
     {ok, WorkerDirs} = application:get_env(mzbench, workers_dirs),
-    WorkersDirsStr = string:join(["'./src'" | [io_lib:format("os.path.expanduser('~s')", [filename:join(W, Module)]) || W <- WorkerDirs]], ", "),
-    port_command(PythonPort, io_lib:format("sys.path = [~s] + sys.path\n", [WorkersDirsStr])),
+    WorkersDirsStr = string:join(["'./src'" | [mzb_string:format("os.path.expanduser('~ts')", [filename:join(W, Module)]) || W <- WorkerDirs]], ", "),
+    port_command(PythonPort, mzb_string:format("sys.path = [~ts] + sys.path\n", [WorkersDirsStr])),
 
     port_command(PythonPort, "import traceback\n"),
     port_command(PythonPort, "import mzbench\n"),
-    port_command(PythonPort, mzb_string:format("import ~s\n", [Module])),
+    port_command(PythonPort, mzb_string:format("import ~ts\n", [Module])),
     Interpreter.
 
 
@@ -67,7 +67,7 @@ stop_interpreter(#python_interpreter{
 -spec apply(python_interpreter(), string() | atom(), string() | atom(), [term()]) -> term().
 apply(Interpreter, Module, Func, Args) ->
     ParamStr = string:join(lists:map(fun encode_for_python/1, Args), ", "),
-    send_command(Interpreter, "~s.~s(~s)", [Module, Func, ParamStr]).
+    send_command(Interpreter, "~ts.~ts(~ts)", [Module, Func, ParamStr]).
 
 -spec eval(python_interpreter(), string()) -> term().
 eval(Interpreter, Str) ->
@@ -81,8 +81,8 @@ eval(Interpreter, Str) ->
 -spec send_command(python_interpreter(), string(), [term()]) -> term().
 send_command(#python_interpreter{python_port = PythonPort} = Interpreter, CmdTemplate, Args) ->
     Command = mzb_string:format(CmdTemplate, Args),
-    port_command(PythonPort, io_lib:format("try:\n"
-        "    mzbench._instruction_end(~s)\n"
+    port_command(PythonPort, mzb_string:format("try:\n"
+        "    mzbench._instruction_end(~ts)\n"
         "except:\n"
         "    traceback.print_exc()\n"
         "    mzbench._instruction_failed(sys.exc_info())\n"
@@ -94,7 +94,7 @@ send_command(#python_interpreter{python_port = PythonPort} = Interpreter, CmdTem
 create_fifo(Name) ->
     FifoName = gen_fifo_name(Name),
     MkFifoExec = os:find_executable("mkfifo"),
-    _ = mzb_subprocess:exec_format("~s ~s", [MkFifoExec, FifoName], [], fun(_, _, _) -> ok end),
+    _ = mzb_subprocess:exec_format("~ts ~ts", [MkFifoExec, FifoName], [], fun(_, _, _) -> ok end),
     FifoPort = open_port(FifoName, [{line, 255}, eof]),
     {FifoName, FifoPort}.
 
@@ -107,7 +107,7 @@ close_fifo(FifoName, FifoPort) ->
 -spec gen_fifo_name(string()) -> string().
 gen_fifo_name(Module) ->
     {N1, N2, N3} = erlang:now(),
-    filename:join(["/", "tmp", io_lib:format("worker_~s_~b_~b_~b.pipe", [Module, N1, N2, N3])]).
+    filename:join(["/", "tmp", mzb_string:format("worker_~ts_~b_~b_~b.pipe", [Module, N1, N2, N3])]).
 
 skip_port_messages(_Port, 0) -> ok;
 skip_port_messages(Port, N) ->
@@ -175,7 +175,7 @@ read_python_output(#python_interpreter{python_port = PythonPort, metrics_pipe = 
                     end,
                     Str = encode_for_python(Content),
                     LineNum = length(string:tokens(Str, "\n")),
-                    port_command(PythonPort, io_lib:format("~s~n~b~n~s~n", [Res, LineNum, Str])),
+                    port_command(PythonPort, mzb_string:format("~ts~n~b~n~ts~n", [Res, LineNum, Str])),
                     read_python_output(Interpreter, PythonAcc, "");
                 {execution_finished, Res} -> Res;
                 {execution_failed, Reason} -> erlang:error({python_statement_failed, Reason});

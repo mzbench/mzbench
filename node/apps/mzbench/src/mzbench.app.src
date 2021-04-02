@@ -1,27 +1,26 @@
-{application, mzbench,
- [
+{application, mzbench, [
   {description, ""},
   {vsn, "1.0.0"},
   {registered, []},
   {applications, [
-                  kernel,
-                  stdlib,
-                  crypto,
-                  lager,
-                  jiffy,
-                  luerl,
-                  sasl,
-                  ranch,
-                  mz_histogram,
-                  mzbench_language,
-                  mzbench_utils,
-                  os_mon,
-                  mz_counter
-                 ]},
+    kernel,
+    stdlib,
+    crypto,
+    lager,
+    jiffy,
+    luerl,
+    sasl,
+    ranch,
+    mz_histogram,
+    mzbench_language,
+    mzbench_utils,
+    os_mon,
+    mz_counter
+  ]},
   {mod, { mzb_app, []}},
   {env, [
     {node_deployment_path, "~/.local/share"},
-    {workers_dirs, ["~/.local/share/mzbench_workers", "../workers"]},
+    {workers_dirs, ["~/.local/share/mzbench_workers", "../workers", "./workers"]},
     {node_log_port, 4801},
     {node_log_user_port, 4802},
     {node_management_port, 4803},
@@ -32,4 +31,4 @@
     {metric_update_interval_ms, 10000},
     {time_sync_interval_s, 60}
   ]}
- ]}.
+]}.

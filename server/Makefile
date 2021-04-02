@@ -72,9 +72,11 @@ check: test-unit dialyzer.log
 
 .PHONY: clean
 clean:
-	$(REBAR) clean
+	# $(REBAR) clean
 	rm -rf _build
 	rm -rf .make
+	rm -rf rebar.lock
+	rm -rf ~/.local/share/mzbench_api
 
 .PHONY: generate
 generate: $(RELEASE_BINARY) ~/.local/share/mzbench_api/server.crt

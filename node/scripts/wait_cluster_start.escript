@@ -48,7 +48,7 @@ ensure_hostnames_are_reachable_from_director(Hostnames) ->
         fun(X) -> X end,
         mzb_lists:pmap(
             fun(Hostname) ->
-                Cmd = lists:flatten(io_lib:format("ping -qc1 ~s", [Hostname])),
+                Cmd = lists:flatten(io_lib:format("ping -qc1 ~ts", [Hostname])),
                 {Code, Output} = cmd(Cmd),
                 case Code of
                     0 -> true;
@@ -84,16 +84,16 @@ is_nodes_ready(Nodes) ->
     is_nodes_ready(NewNodes).
 
 bad_arg(Name, Val) ->
-    io:format("Invalid ~s: ~s~n", [Name, Val]),
+    io:format("Invalid ~ts: ~ts~n", [Name, Val]),
     usage().
 
 usage() ->
-    io:format("Usage: ~s Timeout Host1 [ Host2 [ Host3 ...]]~n", [escript:script_name()]),
+    io:format("Usage: ~ts Timeout Host1 [ Host2 [ Host3 ...]]~n", [escript:script_name()]),
     halt(1).
 
 nodename_gen(Hostname) ->
     {N1,N2,N3} = erlang:now(),
-    Str = lists:flatten(io_lib:format("~p-~p~p@~s", [N1,N2,N3,Hostname])),
+    Str = lists:flatten(io_lib:format("~p-~p~p@~ts", [N1,N2,N3,Hostname])),
     erlang:list_to_atom(Str).
 
 init_net_kernel(Hostname) ->
@@ -136,7 +136,7 @@ receive_answer(Ref) ->
     end.
 
 stop(Pid, Reason) ->
-    io:format("unexpected stop: ~s~n", [Reason]),
+    io:format("unexpected stop: ~ts~n", [Reason]),
     erlang:exit(Pid, Reason),
     halt(1).
 

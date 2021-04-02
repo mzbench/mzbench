@@ -67,7 +67,7 @@ handle_call(Req, _From, State) ->
 
 handle_cast({start_worker, WorkerScript, Env, Worker, Node, WId}, #s{workers = Tid, name = PoolName} = State) ->
     Self = self(),
-    {P, Ref} = erlang:spawn_monitor(fun() ->
+    {P, Ref} = mzb_spawn:spawn_monitor(fun() ->
             mzb_worker_runner:run_worker_script(WorkerScript, Env, Worker, Self, PoolName)
         end),
     ets:insert(Tid, {P, Ref}),
@@ -109,7 +109,7 @@ handle_info(poll_vars, #s{name = Name,
             WorkerNumber > CurrentPoolSize ->
                 system_log:info("[ ~p ] Increasing the number of workers at ~p ~b -> ~b", [Name, node(), CurrentPoolSize, WorkerNumber]),
                 WorkerStarter =
-                    erlang:spawn_monitor(fun () ->
+                    mzb_spawn:spawn_monitor(fun () ->
                         WorkerStartFun(WorkerNumber - CurrentPoolSize, CurrentPoolSize)
                     end),
                 State#s{current_pool_size = WorkerNumber, worker_starter = WorkerStarter};
@@ -148,7 +148,7 @@ handle_info({'DOWN', _Ref, _, Pid, killed_by_pool}, #s{workers = Workers, name =
     NewState = State#s{stopped = State#s.stopped + 1},
     case ets:lookup(Workers, Pid) of
         [{Pid, Ref}] ->
-            ok = mzb_metrics:notify(mzb_string:format("workers.~s.ended", [Name]), 1),
+            ok = mzb_metrics:notify(mzb_string:format("workers.~ts.ended", [Name]), 1),
             ets:delete(Workers, Pid),
             erlang:demonitor(Ref, [flush]);
         _ ->
@@ -206,7 +206,7 @@ start_workers(Pool, Env, NumNodes, Offset, #s{} = State) ->
     end,
 
     WorkerStarter =
-        erlang:spawn_monitor(fun () -> WorkerStartFun(WorkerNumber, 0) end),
+        mzb_spawn:spawn_monitor(fun () -> WorkerStartFun(WorkerNumber, 0) end),
 
     restart_pollvars_timer(
         State#s{name = Name,

@@ -1,13 +1,21 @@
 # HTTP worker for MZBench
 
-Supports the following methods:
+Generates HTTP-load for tested server.
 
-connect/4, set_options/3, disconnect/2,
-    get/3, post/4, set_prefix
+Bellow is supported BDL-methods
 
 ## connect
 
 	connect("mywebserver.com", 80)
+	
+Connect as http.
+
+## connect_https
+
+	connect_https("mywebserver.com", 443)
+	
+Connect as https.
+
 
 ## disconnect
 
@@ -20,6 +28,12 @@ connect/4, set_options/3, disconnect/2,
 ## post
 
 	post("/", "something useful")
+	
+## set_headers
+
+Set headers for requests.
+
+    set_headers(content-type = "text/plain") 	
 
 ## set_options
 

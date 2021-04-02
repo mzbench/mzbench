@@ -12,13 +12,16 @@ main([Script | Params]) ->
 
     ScriptDir = filename:dirname(filename:absname(escript:script_name())),
 
-    LocalCodePaths = lists:foldl(
-                    fun (P, Acc) ->
-                        filelib:wildcard(filename:join(ScriptDir, P)) ++ Acc
-                    end, [],
-                    ["../apps/*/ebin/",
-                     "../../workers/*/ebin/",
-                     "../_build/default/deps/*/ebin/"]),
+    LocalCodePaths = lists:foldl(fun (P, Acc) ->
+        filelib:wildcard(filename:join(ScriptDir, P)) ++ Acc
+    end, [],
+    ["../apps/*/ebin/",
+     "../../workers/*/ebin/",
+     "../_build/default/deps/*/ebin/",
+     "../_build/default/checkouts/*/ebin/"
+    ]),
+
+    io:format("Local code paths: ~p ~n", [ LocalCodePaths ]),
 
     BinDir = filename:dirname(escript:script_name()),
     RpmCodePaths = filelib:wildcard(filename:join(BinDir, "../lib/*/ebin/")),
@@ -53,7 +56,7 @@ run_script(Script, Env) ->
                     {ok, R, _} -> R;
                     {error, _, R, _} -> R
                 end,
-            io:format("~s~n", [Res]);
+            io:format("~ts~n", [Res]);
         {error, Messages} ->
             terminate_node(1, string:join(Messages, "\n"))
     end.
@@ -84,7 +87,7 @@ nodename_gen() ->
     erlang:list_to_atom(Str).
 
 usage() ->
-    io:format("Usage: ~s ScriptName [--validate] [--env name=value...]~n", [escript:script_name()]).
+    io:format("Usage: ~ts ScriptName [--validate] [--env name=value...]~n", [escript:script_name()]).
 
 setup_logger(Handlers) ->
     ok = application:load(lager),
@@ -101,7 +104,7 @@ setup_logger(Handlers) ->
 terminate_node(ExitCode, Message) ->
 %    application:stop(lager), % when in doubt, try uncommenting
     case ExitCode == 0 of
-        true  -> io:format("~s~n", [Message]);
-        false -> io:format(standard_error, "~s~n", [Message])
+        true  -> io:format("~ts~n", [Message]);
+        false -> io:format(standard_error, "~ts~n", [Message])
     end,
     erlang:halt(ExitCode).

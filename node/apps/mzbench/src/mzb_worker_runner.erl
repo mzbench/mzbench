@@ -8,13 +8,13 @@
     -> ok.
 run_worker_script(Script, Env, Worker, PoolPid, PoolName) ->
     _ = random:seed(now()),
-    ok = mzb_metrics:notify(mzb_string:format("workers.~s.started", [PoolName]), 1),
+    ok = mzb_metrics:notify(mzb_string:format("workers.~ts.started", [PoolName]), 1),
     Res = eval_script(Script, Env, Worker),
     case Res of
         {ok, _} -> ok;
-        _ -> mzb_metrics:notify(mzb_string:format("workers.~s.failed", [PoolName]), 1)
+        _ -> mzb_metrics:notify(mzb_string:format("workers.~ts.failed", [PoolName]), 1)
     end,
-    mzb_metrics:notify(mzb_string:format("workers.~s.ended", [PoolName]), 1),
+    mzb_metrics:notify(mzb_string:format("workers.~ts.ended", [PoolName]), 1),
     PoolPid ! {worker_result, self(), Res},
     ok.
 

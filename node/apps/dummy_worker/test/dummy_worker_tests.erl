@@ -164,7 +164,7 @@ eval_replace_int_with_float_test() ->
 compile_and_load(AST, Env) ->
     {NewAST, Modules} = mzb_compiler:compile(AST, Env),
     lists:foreach(fun ({Mod, Bin}) ->
-            {module, _} = code:load_binary(Mod, mzb_string:format("~s.erl", [Mod]), Bin)
+            {module, _} = code:load_binary(Mod, mzb_string:format("~ts.erl", [Mod]), Bin)
         end, Modules),
     NewAST.
 

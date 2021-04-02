@@ -17,17 +17,17 @@ read_and_validate(ScriptFileName, Env) ->
     catch
         C:{read_file_error, File, E} = Error:ST ->
             Message = mzb_string:format(
-                "Failed to read file ~s: ~s",
+                "Failed to read file ~ts: ~ts",
                 [File, file:format_error(E)]),
             {error, C, Error, ST, [Message]};
         C:{parse_error, {LineNumber, erl_parse, E}} = Error:ST ->
             Message = mzb_string:format(
-                "Failed to parse script ~s:~nline ~p: ~s",
+                "Failed to parse script ~ts:~nline ~p: ~ts",
                 [ScriptFileName, LineNumber, [E]]),
             {error, C, Error, ST, [Message]};
         C:{parse_error,{expected, E, {{line, LineNumber}, {column, ColumnNumber}}}} = Error:ST ->
             Message = mzb_string:format(
-                "Failed to parse script ~s:~nline ~p, column ~p: ~p",
+                "Failed to parse script ~ts:~nline ~p, column ~p: ~p",
                 [ScriptFileName, LineNumber, ColumnNumber, E]),
             {error, C, Error, ST, [Message]};
         C:{invalid_operation_name, Name} = Error:ST ->
@@ -39,7 +39,7 @@ read_and_validate(ScriptFileName, Env) ->
             {error, C, Error, ST, Messages};
         C:Error:ST ->
             Message = mzb_string:format(
-                "Script ~s is invalid:~nError: ~p~n~nStacktrace for the curious: ~p",
+                "Script ~ts is invalid:~nError: ~p~n~nStacktrace for the curious: ~p",
                 [ScriptFileName, Error, ST]),
             {error, C, Error, ST, [Message]}
     end.
@@ -51,7 +51,7 @@ validate(Script) ->
         {false, Reason, undefined} ->
             erlang:error({error, {validation, [mzb_string:format("Type error ~p", [Reason])]}});
         {false, Reason, Location} ->
-            erlang:error({error, {validation, [mzb_string:format("~sType error ~p", [Location, Reason])]}});
+            erlang:error({error, {validation, [mzb_string:format("~tsType error ~p", [Location, Reason])]}});
         _ -> []
     end,
 
@@ -71,7 +71,7 @@ validate(Script) ->
               validate_defaults_list(DefaultsList) ++ Acc;
             (#operation{name = pool} = Pool, Acc) -> validate_pool(Pool) ++ Acc;
             (#operation{name = F, args = A, meta = M}, Acc) ->
-                [mzb_string:format("~sUnknown function: ~p/~p",
+                [mzb_string:format("~tsUnknown function: ~p/~p",
                     [mzbl_script:meta_to_location_string(M), F, erlang:length(A)])|Acc];
             (T, Acc) ->
                 [mzb_string:format("Unexpected top-level term ~p", [T])|Acc]
@@ -93,7 +93,7 @@ validate_resource_filename(Filename) ->
         [".", _] -> [];
         [S | _] ->
             case re:run(S, "^https?:", [{capture, first}, caseless]) of
-                nomatch -> [mzb_string:format("Invalid resource filename: ~s", [Filename])];
+                nomatch -> [mzb_string:format("Invalid resource filename: ~ts", [Filename])];
                 {match, _} -> []
             end
     end.
@@ -105,7 +105,7 @@ validate_pool(#operation{name = pool, args = [Opts, Script], meta = Meta} = Op) 
     Size = case lists:keyfind(size, #operation.name, Opts) of
         #operation{args = [X]} -> X;
         _ -> erlang:error({error, {validation,
-            [mzb_string:format("~spool without size", [mzbl_script:meta_to_location_string(Meta)])]}})
+            [mzb_string:format("~tspool without size", [mzbl_script:meta_to_location_string(Meta)])]}})
     end,
     WorkerStartType =
         case lists:keyfind(worker_start, #operation.name, Opts) of
@@ -158,7 +158,7 @@ validate_defaults_list(L) ->
             {false, Reason, undefined} ->
                 [mzb_string:format("Type error ~p", [Reason])|Acc];
             {false, Reason, Location} ->
-                [mzb_string:format("~sType error ~p", [Location, Reason])|Acc];
+                [mzb_string:format("~tsType error ~p", [Location, Reason])|Acc];
             _ -> Acc
           end;
         (Term, Acc) ->
@@ -178,5 +178,5 @@ check_deprecated_defaults(Script) ->
     
     lists:map(
         fun (#operation{args = [Name|_], meta = M}) ->
-            mzb_string:format("~sWarning: ~s uses a deprecated default value declaration format", [mzbl_script:meta_to_location_string(M), Name])
+            mzb_string:format("~tsWarning: ~ts uses a deprecated default value declaration format", [mzbl_script:meta_to_location_string(M), Name])
         end, lists:reverse(VarsWithDefault)).
