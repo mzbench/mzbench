@@ -100,4 +100,4 @@ shell:
 SCRIPT?=../example/test.bdl
 ENV?= --env loop_rate=5
 local: compile
-	cd ./scripts && ./run_local.escript $(SCRIPT) $(ENV)
+	./scripts/run_local.escript $(SCRIPT) $(ENV)
