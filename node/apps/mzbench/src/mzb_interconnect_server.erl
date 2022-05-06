@@ -4,7 +4,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4]).
+-export([start_link/3]).
 
 %% gen_server
 -export([init/1,
@@ -23,7 +23,8 @@
 
 -define(INIT_WAIT_MSEC, 5000).
 
-start_link(Ref, Socket, Transport, Opts) ->
+start_link(Ref, Transport, Opts) ->
+    {ok, Socket} = ranch:handshake(Ref),
     proc_lib:start_link(?MODULE, init, [Ref, Socket, Transport, Opts]).
 
 
