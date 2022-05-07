@@ -20,6 +20,7 @@
     remove_tags/2
 ]).
 
+-compile({no_auto_import,[error/3]}).
 
 -ifdef(TEST).
 -export([allocate_hosts/2]).
