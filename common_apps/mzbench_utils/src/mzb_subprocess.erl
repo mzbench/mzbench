@@ -84,7 +84,7 @@ exec_format(Format, Args, Opts, Logger, _Handler, _InitState) ->
     CmdBin = unicode:characters_to_binary(lists:flatten(Command)),
     %% Port = open_port({spawn, CmdBin }, [stream, binary, eof, exit_status | Opts]),
     %% Res = get_data(Port, InitState),
-    {Code, _Output} = Res = exec(Command, Opts),
+    {Code, _Output} = Res = exec(Command, Opts, Logger),
     case Res of
         {0, Output} ->
             string:strip(Output, right, $\n);
@@ -103,7 +103,7 @@ check_output(Format, Args, Opts, Logger) ->
     Logger(info, "[ EXEC ] ~ts (~p)", [Command, self()]),
     %%Port = open_port({spawn, lists:flatten(Command)}, [stream, eof, exit_status, binary | Opts]),
     %% {Code, _Output} = Res = get_data(Port, []),
-    {Code, _Output} = Res = exec(Command, Opts),
+    {Code, _Output} = Res = exec(Command, Opts, Logger),
     Duration = timer:now_diff(os:timestamp(), BeforeExec),
     Logger(info, "[ EXEC ] Command executed in ~p ms~nCmd: ~ts~nExit code: ~p~n",
         [Duration / 1000, Command, Code]),
@@ -130,13 +130,14 @@ check_output(Format, Args, Opts, Logger) ->
 
 %% INTERNAL
 
-exec(Cmd, Opts) ->
+exec(Cmd, Opts, Logger) ->
     case exec:run(Cmd, [ sync, stdout, { stderr, stdout }, { env, [{"ESCRIPT_NAME", false }]}] ++ Opts) of
         { ok, []} -> { 0, ""};
         { ok, Info} ->
             Bin = mzb_binary:merge(proplists:get_value(stdout, Info )),
             { 0, unicode:characters_to_list(Bin) };
         { error, Info} ->
+            Logger(info, "[ EXEC ] Error l140 ~p~n", [Info]),
             Bin = mzb_binary:merge(proplists:get_value(stdout, Info )),
             { proplists:get_value(exit_status, Info), unicode:characters_to_list(Bin) }
     end.
