@@ -2,8 +2,8 @@
 
 -export([init/2,
          terminate/3,
-         websocket_handle/3,
-         websocket_info/3,
+         websocket_handle/2,
+         websocket_info/2,
          reauth/1,
          close/2]).
 
@@ -108,27 +108,27 @@ terminate(_Reason, _Req, #state{ref = Ref}) ->
     gen_event:delete_handler(mzb_api_firehose, {mzb_api_firehose, Ref}, [self()]),
     ok.
 
-websocket_handle({text, Msg}, Req, State) ->
+websocket_handle({text, Msg}, State) ->
     case dispatch_request(jiffy:decode(Msg, [return_maps]), State) of
         {reply, Reply, NewState} ->
             JsonReply = unicode:characters_to_binary(jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8])),
-            {reply, {text, JsonReply}, Req, NewState};
+            {[{text, JsonReply}], NewState};
         {ok, NewState} ->
-            {ok, Req, NewState}
+            {ok, NewState}
     end;
 
-websocket_handle(_Data, Req, State) ->
-    {ok, Req, State}.
+websocket_handle(_Data, State) ->
+    {ok, State}.
 
-websocket_info(Message, Req, State) ->
+websocket_info(Message, State) ->
     case dispatch_info(Message, State) of
         {reply, Reply, NewState} ->
             JsonReply = unicode:characters_to_binary(jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8])),
-            {reply, {text, JsonReply}, Req, NewState};
+            {[{text, JsonReply}], NewState};
         {ok, NewState} ->
-            {ok, Req, NewState};
+            {ok, NewState};
         {stop, NewState} ->
-            {stop, Req, NewState}
+            {stop, NewState}
     end.
 
 dispatch_info(reauth, State) ->

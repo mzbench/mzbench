@@ -417,7 +417,7 @@ reply_json(Code, Map, Req) ->
         200 -> lager:info( "[ RESPONSE ] : ~p ~p", [Code, Map]);
         _   -> lager:error("[ RESPONSE ] : ~p ~p~n~p", [Code, Map, Req])
     end,
-    cowboy_req:reply(Code, [{<<"content-type">>, <<"application/json">>}], jiffy:encode(Map), Req).
+    cowboy_req:reply(Code, #{<<"content-type">> => <<"application/json">>}, jiffy:encode(Map), Req).
 
 reply_redirect(Code, URI, Req) ->
     lager:info("[ REDIRECT ] ~p -> ~p", [Code, URI]),

@@ -34,9 +34,10 @@ start_http_server() ->
     {ok, Protocol} =  application:get_env(mzbench_api, protocol),
     lager:info("Starting cowboy ~p listener on ~p:~p", [Protocol, CowboyInterface, CowboyPort]),
     Params = [{port, CowboyPort}, {ip, CowboyInterface}],
-    Env = [{env, [{dispatch, Dispatch}]}],
+   % Env = [{env, [{dispatch, Dispatch}]}],
+    Env = #{env => #{dispatch => Dispatch}},
     {ok, _} = case Protocol of
-        http -> cowboy:start_http(http, 100, Params, Env);
+        http -> cowboy:start_clear(http, Params, Env);
         https ->
             {ok, CertFile} = application:get_env(mzbench_api, certfile),
             {ok, KeyFile} = application:get_env(mzbench_api, keyfile),
@@ -44,6 +45,7 @@ start_http_server() ->
                                 none -> [];
                                 F -> [{cacertfile, mzb_file:expand_filename(F)}]
                             end,
+    % TODO: adapt https to Cowboy 2
             cowboy:start_https(https, 100, Params ++ CACertInList
                                 ++ [{certfile, mzb_file:expand_filename(CertFile)},
                                     {keyfile, mzb_file:expand_filename(KeyFile)}], Env)
