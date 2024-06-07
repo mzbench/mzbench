@@ -250,7 +250,7 @@ case "$1" in
         ;;
 
     rpcterms)
-        ## Call rpcterms
+        ## Call rpc
         shift
         $NODETOOL rpcterms $@
         ES=$?
@@ -321,7 +321,7 @@ case "$1" in
         # however, for debugging, sometimes start_clean.boot is useful.
         # For e.g. 'setup', one may even want to name another boot script.
         case "$1" in
-            console)        BOOTFILE=$SCRIPT ;;
+            console)        BOOTFILE=start ;;  #$SCRIPT ;;
             console_clean)  BOOTFILE=start_clean ;;
             console_boot)
                 shift
