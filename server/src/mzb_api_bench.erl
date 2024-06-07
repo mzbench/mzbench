@@ -304,7 +304,7 @@ handle_stage(pipeline, pre_hooks, #{cluster_connection:= Connection, config:= Co
         catch
             error:{error, List} ->
                 ResStr = string:join(List, "\n"),
-                error("~s", [ResStr], State),
+                log_error("~s", [ResStr], State),
                 mzb_pipeline:error(validation_failed,
                                    fun (S) -> S#{result_str => ResStr} end)
 
@@ -325,7 +325,7 @@ handle_stage(pipeline, starting, #{cluster_connection:= Connection, config:= Con
         ok -> ok;
         {error, List} ->
             ResStr = mzb_string:format("Start failed: ~s", [string:join(List, "\n")]),
-            error(ResStr, [], State),
+            log_error(ResStr, [], State),
             mzb_pipeline:error(start_benchmark_failed,
                                fun (S) -> S#{result_str => ResStr} end)
     end;
@@ -337,13 +337,13 @@ handle_stage(pipeline, running, #{cluster_connection:= Connection} = State) ->
             Res = aggregate_results(Metrics, Histograms, State),
             fun (S) -> S#{results => Res, result_str => Str} end;
         {error, Reason, ReasonStr, {Metrics, Histograms}} ->
-            error("Benchmark result: FAILED~n~s", [ReasonStr], State),
+            log_error("Benchmark result: FAILED~n~s", [ReasonStr], State),
             Res = aggregate_results(Metrics, Histograms, State),
             mzb_pipeline:error({benchmark_failed, Reason}, fun (S) -> S#{results => Res, result_str => ReasonStr} end)
     catch
         _:Error ->
             ResStr = mzb_string:format("Benchmark result: EXCEPTION~n~p", [Error]),
-            error(ResStr, [], State),
+            log_error(ResStr, [], State),
             mzb_pipeline:error({benchmark_failed, Error},
                                fun (S) -> S#{result_str => ResStr} end)
     end;
@@ -390,7 +390,7 @@ handle_stage(finalize, sending_email_report, #{emails:= Emails} = State) ->
     case send_email_report(Emails, status(State)) of
         ok -> ok;
         {error, {Error, Stacktrace}} ->
-            error("Send report to ~p failed with reason: ~p~n~p", [Emails, Error, Stacktrace], State)
+            log_error("Send report to ~p failed with reason: ~p~n~p", [Emails, Error, Stacktrace], State)
     end;
 
 handle_stage(finalize, cleaning_nodes, #{config:= #{deallocate_after_bench:= false}} = State) ->
@@ -417,7 +417,7 @@ handle_stage(finalize, deallocating_hosts, #{deallocator:= Deallocator} = State)
             Deallocator(),
             ok
         catch _C:E:ST ->
-            error("Deallocation has failed with reason: ~p~nStacktrace: ~p", [E, ST], State),
+            log_error("Deallocation has failed with reason: ~p~nStacktrace: ~p", [E, ST], State),
             retry
         end
     end,
@@ -445,7 +445,7 @@ handle_call({change_env, Env}, From, #{status:= running, config:= Config, cluste
                 ok == Res andalso mzb_pipeline:cast(Self, {env_changed, Env}),
                 mzb_pipeline:reply(From, Res);
             ({exception, {C, E, ST}}) ->
-                error("Change env exception ~p:~p~n~p", [C, E, ST], State),
+                log_error("Change env exception ~p:~p~n~p", [C, E, ST], State),
                 mzb_pipeline:reply(From, {error, E})
         end),
     {noreply, State};
@@ -460,7 +460,7 @@ handle_call({run_command, Pool, Percent, Command}, From, #{status:= running, clu
                 info("Received run_command response: ~p", [Res], State),
                 mzb_pipeline:reply(From, Res);
             ({exception, {C, E, ST}}) ->
-                error("Run command exception ~p:~p~n~p", [C, E, ST], State),
+                log_error("Run command exception ~p:~p~n~p", [C, E, ST], State),
                 mzb_pipeline:reply(From, {error, E})
         end),
     {noreply, State};
@@ -490,7 +490,7 @@ handle_call(get_author, _From, #{config:= Config} = State) ->
     {reply, maps:get(author, Config), State};
 
 handle_call(_Request, _From, State) ->
-    error("Unhandled call: ~p", [_Request], State),
+    log_error("Unhandled call: ~p", [_Request], State),
     {noreply, State}.
 
 handle_cast({director_message, {new_metrics, NewMetrics}}, #{metrics:= Metrics, config:= Config} = State) ->
@@ -525,18 +525,18 @@ handle_cast({error_counter, inc_system}, #{system_errors:= OldValue} = State) ->
     {noreply, maybe_update_bench(State#{system_errors => OldValue + 1})};
 
 handle_cast(_Msg, State) ->
-    error("Unhandled cast: ~p", [_Msg], State),
+    log_error("Unhandled cast: ~p", [_Msg], State),
     {noreply, State}.
 
 handle_info({'EXIT', _, normal}, State) ->
     {noreply, State};
 
 handle_info({'EXIT', P, Reason}, State) ->
-    error("Benchmark received 'EXIT' from ~p with reason ~p, stopping", [P, Reason], State),
+    log_error("Benchmark received 'EXIT' from ~p with reason ~p, stopping", [P, Reason], State),
     {stop, Reason, State};
 
 handle_info(_Info, State) ->
-    error("Unhandled info: ~p", [_Info], State),
+    log_error("Unhandled info: ~p", [_Info], State),
     {noreply, State}.
 
 
@@ -545,7 +545,7 @@ terminate(normal, State) ->
     catch (maps:get(log_user_file_handler, State))(close);
 % something is going wrong there. use special status for bench and run finalize stages again
 terminate(Reason, #{id:= Id} = State) ->
-    error("Receive terminate while finalize is not completed: ~p", [Reason], State),
+    log_error("Receive terminate while finalize is not completed: ~p", [Reason], State),
     mzb_api_server:bench_finished(Id, status(State)),
     catch (maps:get(log_file_handler, State))(close),
     catch (maps:get(log_user_file_handler, State))(close),
@@ -563,7 +563,7 @@ terminate(Reason, #{id:= Id} = State) ->
                                     Res
                                 catch
                                     _C:E:ST ->
-                                        error("Stage 'finalize - ~s': failed~n~s", [Stage, format_error(Stage, {E, ST})], NewState)
+                                        log_error("Stage 'finalize - ~s': failed~n~s", [Stage, format_error(Stage, {E, ST})], NewState)
                                 end
                             end, Stages),
 
@@ -598,7 +598,7 @@ handle_pipeline_status_ll({complete, Phase, Stage}, State) ->
     info("Stage '~s - ~s': finished", [Phase, Stage], State),
     State;
 handle_pipeline_status_ll({exception, Phase, Stage, E, ST}, #{result_str:= ResStr} = State) ->
-    error("Stage '~s - ~s': failed~n~s", [Phase, Stage, format_error(Stage, {E, ST})], State),
+   log_error("Stage '~s - ~s': failed~n~s", [Phase, Stage, format_error(Stage, {E, ST})], State),
     case ResStr of
         "" ->
             Res = mzb_string:format("Stage ~p failed: ~p", [Stage, E]),
@@ -848,7 +848,7 @@ indent(Str, N) ->
 info(Format, Args, State) ->
     log(info, Format, Args, State).
 
-error(Format, Args, State) ->
+log_error(Format, Args, State) ->
     log(error, Format, Args, State).
 
 log(Severity, Format, Args, #{log_file_handler:= H, id:= Id, self:= Self}) ->
@@ -1033,7 +1033,7 @@ aggregate_results(Metrics, Histograms, #{config:= Config} = State) ->
                 aggregate_results_for_metric(M, Config, Percentiles, Histograms)
             catch
                 _:Error:ST ->
-                    error("Aggregating result for ~p failed: ~p~nStacktrace: ~p", [M, Error, ST], State),
+                    log_error("Aggregating result for ~p failed: ~p~nStacktrace: ~p", [M, Error, ST], State),
                     []
             end
         end, Flatten),
