@@ -230,7 +230,7 @@ get_host_os_id(UserName, Hosts, Logger) ->
 
 get_host_erts_version(UserName, Hosts, Logger) ->
     Versions = mzb_subprocess:remote_cmd(UserName, Hosts,
-        "erl -noshell -eval 'io:fwrite(\\\"~s\\\", [erlang:system_info(version)]).' -s erlang halt",
+        "erl -noshell -eval 'io:fwrite(\\\"~s\\\", [erlang:system_info(version)])' -eval 'erlang:halt()'",
         [], Logger, []),
     [lists:flatten(V) || V <- Versions].
 
