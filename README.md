@@ -17,7 +17,7 @@ MZBench is:
  - **Extendable:** write your own [cloud plugins](doc/cloud_plugins.md#how-to-write-a-cloud-plugin) and [workers](doc/workers.md#how-to-write-a-worker).
  - **Open-source:** MZBench is released under the [BSD license](https://github.com/mzbench/mzbench/blob/master/LICENSE).
 
-[Read the docs →](https://satori-com.github.io/mzbench)
+[Read the docs →](https://mzbench.github.io/mzbench)
 
 ## Protocols
 
