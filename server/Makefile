@@ -86,7 +86,7 @@ generate: $(RELEASE_BINARY) ~/.local/share/mzbench_api/server.crt
 .make/compilation-up-to-date: rebar.config $(SOURCES) .make/git-rev-$(GIT_HEAD) $(MZBENCH_COMMON_SOURCES)
 	$(REBAR) compile
 
-	make -C _build/default/deps/jiffy # Until https://github.com/davisp/jiffy/issues/96 is resolved
+	# make -C _build/default/deps/jiffy # Until https://github.com/davisp/jiffy/issues/96 is resolved
 
 	mkdir -p .make && touch $@
 
