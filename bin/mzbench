@@ -157,8 +157,8 @@ import sys
 import time
 
 def check_module_version(module, required_version):
-    import distutils.version
-    return distutils.version.StrictVersion(module.__version__) >= distutils.version.StrictVersion(required_version)
+    import packaging.version
+    return packaging.version.parse(module.__version__) >= packaging.version.parse(required_version)
 
 
 try:
@@ -560,7 +560,7 @@ def run_or_validate(script, env, validate):
         pa += ["--pa", p]
     cmd = [os.path.join(escript_path, escript_name), script, '--pa', os.getcwd() + "/ebin"] + pa
 
-    for k, v in env.iteritems():
+    for k, v in env.items():
         cmd.append('--env')
         cmd.append(k + '=' + v)
 
