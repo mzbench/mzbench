@@ -8,10 +8,6 @@
        {ref,"883013e96408f98b29d016fa094b8ac7410c364e"}},
   1},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
- {<<"hamcrest">>,
-  {git,"https://github.com/hyperthunk/hamcrest-erlang",
-       {ref,"a8578932014c86fe395982fa3151d48897b9c37f"}},
-  0},
  {<<"hdr_histogram">>,
   {git,"https://github.com/mzbench/hdr_histogram_erl.git",
        {ref,"0db52bf3ee58c247cf7227c48e3946cc34969c92"}},
@@ -37,7 +33,11 @@
  {<<"pretty_errors">>,
   {git,"https://github.com/ethercrow/pretty_errors",
        {ref,"531d79b0057c3b08b8509b326b9bdaf663bf45ce"}},
-  1}]}.
+  1},
+ {<<"ranch">>,
+  {git,"https://github.com/ninenines/ranch.git",
+       {ref,"a692f44567034dacf5efcaa24a24183788594eb7"}},
+  0}]}.
 [
 {pkg_hash,[
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>}]},
