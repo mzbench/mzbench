@@ -16,8 +16,8 @@
 start(_Name, Opts) ->
     Opts.
 
-% couldn't satisfy both erl 18 and 19 dialyzers, spec commented
-%-spec create_cluster(#{config:=[any()], instance_spec:=[any()], instance_user:=_, _=>_}, NumNodes :: pos_integer(), Config :: #{}) -> {ok, {map(),[any()]}, string(), [string()]}.
+-spec create_cluster(#{config:=[any()], instance_spec:=[any()], instance_user:=_, _=>_}, 
+    NumNodes :: pos_integer(), Config :: #{}) -> {ok, {map(),[any()]}, string(), [string()]}.
 create_cluster(Opts = #{instance_user:= UserName}, NumNodes, Config) when is_integer(NumNodes), NumNodes > 0 ->
     Overhead = mzb_bc:maps_get(overhead, Opts, 0),
     {ok, Data} = erlcloud_ec2:run_instances(instance_spec(NumNodes, Overhead, Opts), get_config(Opts)),
@@ -60,8 +60,7 @@ get_IPs(Ids, Data, [H | T]) ->
         _ -> get_IPs(Ids, Data, T)
     end.
 
-% couldn't satisfy both erl 18 and 19 dialyzers, spec commented
-%-spec destroy_cluster({#{config:=[any()], _=>_}, [term()]}) -> ok.
+-spec destroy_cluster({#{config:=[any()], _=>_}, [term()]}) -> ok.
 
 destroy_cluster({Opts, Ids}) ->
     R = erlcloud_ec2:terminate_instances(Ids, get_config(Opts)),
@@ -97,6 +96,9 @@ wait_nodes_start(N, [H | T], Opts, C) ->
 instance_spec(NumNodes, Overhead, #{instance_spec:= Ec2AppConfig}) ->
     lists:foldr(fun({Name, Value}, A) -> set_record_element(A, Name, Value) end,
         #ec2_instance_spec{
+            image_id= "undefined",
+            instance_type = "undefined",
+            subnet_id = "undefined",
             min_count = NumNodes,
             max_count = trunc(NumNodes*(1 + Overhead / 100)),
             iam_instance_profile_name = "undefined"},

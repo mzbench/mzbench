@@ -1,5 +1,5 @@
 [ {make_install,
-    [ {git, {var, "mzbench_repo", "git://github.com/machinezone/mzbench"}},
+    [ {git, {var, "mzbench_repo", "https://github.com/machinezone/mzbench"}},
       {branch, "lua-metrics"},
       {dir, "workers/lua"}]},
   {pool,

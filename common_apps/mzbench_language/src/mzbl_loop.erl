@@ -117,7 +117,7 @@ msnow() ->
     -> number().
 time_of_next_iteration(#const_rate{value = undefined}, _, _) -> 0;
 time_of_next_iteration(#const_rate{value = 0}, Duration, _) -> Duration * 2; % should be more than loop length "2" does not stand for anything important
-time_of_next_iteration(#const_rate{value = 0.0}, Duration, _) -> Duration * 2;
+time_of_next_iteration(#const_rate{value = +0.0}, Duration, _) -> Duration * 2;
 time_of_next_iteration(#const_rate{value = Rate}, _Duration, IterationNumber) ->
     (IterationNumber * ?MSEC_in_SEC) / Rate;
 time_of_next_iteration(#linear_rate{from = F, to = T}, Duration, _) when F == 0, T == 0 -> Duration * 2; % we want to match 0 and 0.0 hence the guard usage

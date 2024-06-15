@@ -208,7 +208,9 @@ set_proxy(Type, Value, NoProxy) ->
             false -> [];
             _ -> [parse_no_proxy(Str) || Str <- string:tokens(NoProxy, ",")]
         end,
-    {ok, {_, _, Host, Port, _, _}} = http_uri:parse(Value),
+    ParsedUri = uri_string:parse(Value),
+    Host = maps:get(host, ParsedUri),
+    Port = maps:get(port, ParsedUri),
     lager:info("Using ~p:~p as ~p for auth (exceptions: ~p)", [Host, Port, Type, NoProxyList]),
     httpc:set_options([{Type, {{Host, Port}, NoProxyList}}], auth_profile).
 

@@ -65,8 +65,8 @@ handle(<<"GET">>, <<"/github_auth">>, _, Req) ->
     Req2 =
         case mzb_api_auth:auth_connection(undefined, "github", Code) of
             {ok, Ref, _UserInfo} ->
-                cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), Ref,
-                    [{http_only, true}], Req);
+                cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), Ref, Req,
+                    #{http_only => true});
             {error, Reason} ->
                 lager:error("Authentication error: ~p", [Reason]),
                 Req
@@ -106,8 +106,8 @@ handle(<<"POST">>, <<"/auth">>, _, Req) ->
                           }}, Req), #{}};
                 {error, Reason} ->
 
-                    Req2 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), <<>>,
-                            [{http_only, true}, {max_age, 0}], Req),
+                    Req2 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), <<>>, Req,
+                            #{http_only => true, max_age => 0}),
                     ReplyReason =
                         case Reason of
                             user_not_found -> <<"User not found">>;
@@ -117,12 +117,12 @@ handle(<<"POST">>, <<"/auth">>, _, Req) ->
             end;
 
         _ ->
-            {ok, Code, Req2} = cowboy_req:body(Req),
+            {ok, Code, Req2} = read_body(Req, <<>>),
 
             case mzb_api_auth:auth_connection(undefined, binary_to_list(Type), Code) of
                 {ok, Ref, UserInfo} ->
-                    Req3 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), Ref,
-                            [{http_only, true}], Req2),
+                    Req3 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), Ref, Req2
+                            #{http_only => true}),
                     {ok, reply_json(200,
                             #{res => <<"ok">>,
                               user_info => #{
@@ -141,8 +141,8 @@ handle(<<"POST">>, <<"/sign-out">>, _, Req) ->
     Cookies = cowboy_req:parse_cookies(Req),
     Ref = proplists:get_value(mzb_api_auth:cookie_name(), Cookies, undefined),
     mzb_api_auth:sign_out_connection(Ref),
-    Req2 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), <<>>,
-                            [{http_only, true}, {max_age, 0}], Req),
+    Req2 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), <<>>, Req,
+                            #{http_only => true, max_age => 0}),
     {ok, reply_json(200, #{}, Req2), #{}};
 
 handle(<<"POST">>, <<"/typecheck">>, _, Req) ->
@@ -267,7 +267,7 @@ handle(<<"GET">>, <<"/email_report">>, _UserInfo, Req) ->
 handle(<<"GET">>, <<"/graphs">>, _UserInfo, Req) ->
     with_bench_id(Req, fun(Id) ->
         Location = list_to_binary(mzb_string:format("/#/bench/~p/overview", [Id])),
-        Headers = [{<<"Location">>, Location}],
+        Headers = #{<<"Location">> => Location},
         {ok, cowboy_req:reply(302, Headers, <<>>, Req), #{}}
     end);
 
@@ -385,7 +385,7 @@ with_bench_id(Req, Action) ->
 info({log, Msg}, Req, State) ->
     % this code is executed when you write something to log
     % so please don't log inside the function
-    ok = cowboy_req:chunk([Msg], Req),
+    ok = cowboy_req:stream_body([Msg], nofin, Req), % fin|nofin?
     {ok, Req, State}.
 
 terminate(_Reason, _Req, #{lager_backend_id:= Id}) ->
@@ -394,10 +394,10 @@ terminate(_Reason, _Req, _State) ->
     ok.
 
 multipart(Req, Res) ->
-    case cowboy_req:part(Req) of
+    case cowboy_req:read_part(Req) of
         {ok, Headers, Req2} ->
             {ok, Body, Req3} = read_big_file(Req2),
-            {file, Field, Filename, _CT, _Enc} = cow_multipart:form_data(Headers),
+            {file, Field, Filename, _Type} = cow_multipart:form_data(Headers),
             multipart(Req3, [{Field, {binary_to_list(Filename), Body}}|Res]);
         {done, Req2} ->
             {Res, Req2}
@@ -407,7 +407,7 @@ read_big_file(Req) ->
     read_big_file(Req, <<>>).
 
 read_big_file(Req, Acc) ->
-    case cowboy_req:part_body(Req) of
+    case cowboy_req:read_part_body(Req) of
         {ok, Body, Req2} -> {ok, <<Acc/binary, Body/binary>>, Req2};
         {more, Body, Req2} -> read_big_file(Req2, <<Acc/binary, Body/binary>>)
     end.
@@ -417,11 +417,11 @@ reply_json(Code, Map, Req) ->
         200 -> lager:info( "[ RESPONSE ] : ~p ~p", [Code, Map]);
         _   -> lager:error("[ RESPONSE ] : ~p ~p~n~p", [Code, Map, Req])
     end,
-    cowboy_req:reply(Code, [{<<"content-type">>, <<"application/json">>}], jiffy:encode(Map), Req).
+    cowboy_req:reply(Code, #{<<"content-type">> => <<"application/json">>}, jiffy:encode(Map), Req).
 
 reply_redirect(Code, URI, Req) ->
     lager:info("[ REDIRECT ] ~p -> ~p", [Code, URI]),
-    cowboy_req:reply(Code, [{<<"Location">>, iolist_to_binary(URI)}], <<"Authenticated">>, Req).
+    cowboy_req:reply(Code, #{<<"Location">> => iolist_to_binary(URI)}, <<"Authenticated">>, Req).
 
 reply_error(HttpCode, Code, Description, Req) ->
     reply_json(HttpCode,
@@ -584,8 +584,8 @@ stream_from_file(File, Compression, BenchId, Req) ->
             none -> <<"identity">>;
             deflate -> <<"deflate">>
         end,
-    Headers = [{<<"content-type">>, <<"text/plain">>},
-               {<<"content-encoding">>, ContentEncoding}],
+    Headers = #{<<"content-type">> => <<"text/plain">>,
+               <<"content-encoding">> => ContentEncoding},
     IsFinished =
         fun () ->
             mzb_api_server:is_datastream_ended(BenchId)
@@ -594,12 +594,11 @@ stream_from_file(File, Compression, BenchId, Req) ->
     case IsFinished() of
         true ->
             {ok, #file_info{size = FileSize}} = file:read_file_info(File),
-            F = fun (Socket, Transport) -> Transport:sendfile(Socket, File) end,
-            Req2 = cowboy_req:set_resp_body_fun(FileSize, F, Req),
+            Req2 = cowboy_req:set_resp_body({sendfile, 0, FileSize, File}, Req),
             cowboy_req:reply(200, Headers, Req2);
         false ->
-            Req2 = cowboy_req:chunked_reply(200, Headers, Req),
-            Streamer = fun (Bin) -> cowboy_req:chunk(Bin, Req2) end,
+            Req2 = cowboy_req:stream_reply(200, Headers, Req),
+            Streamer = fun (Bin) -> cowboy_req:stream_body(Bin, nofin, Req2) end,
             ReadAtOnce = application:get_env(mzbench_api, bench_read_at_once, undefined),
             {ok, H} = file:open(File, [raw, read, binary, {read_ahead, ReadAtOnce}]),
             try
@@ -632,15 +631,15 @@ stream_data_from_file(H, Streamer, IsFinished, Timeout) ->
     end.
 
 stream_metrics_from_files(Files, BenchId, Req) ->
-    Headers = [{<<"content-type">>, <<"text/plain">>},
-               {<<"content-encoding">>, <<"identity">>}],
+    Headers = #{<<"content-type">> => <<"text/plain">>,
+               <<"content-encoding">> => <<"identity">>},
     IsFinished =
         fun () ->
             mzb_api_server:is_datastream_ended(BenchId)
         end,
 
-    Req2 = cowboy_req:chunked_reply(200, Headers, Req),
-    Streamer = fun (Bin) -> cowboy_req:chunk(Bin, Req2) end,
+    Req2 = cowboy_req:stream_reply(200, Headers, Req),
+    Streamer = fun (Bin) -> cowboy_req:stream_body(Bin, nofin, Req2) end, % fin|nofin ?
     ReadAtOnce = application:get_env(mzbench_api, bench_read_at_once, undefined),
     hd(mzb_lists:pmap(
         fun ({Name, File}) ->
@@ -686,3 +685,9 @@ format_typecheck_reason(I) when is_integer(I) ->
 format_typecheck_reason(F) when is_float(F) ->
     float_to_list(F);
 format_typecheck_reason(L) when is_list(L) -> L.
+
+read_body(Req0, Acc) ->
+    case cowboy_req:read_body(Req0) of
+        {ok, Data, Req} -> {ok, << Acc/binary, Data/binary >>, Req};
+        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
+    end.
