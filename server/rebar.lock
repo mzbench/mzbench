@@ -15,7 +15,7 @@
  {<<"eini">>,{pkg,<<"eini">>,<<"1.2.4">>},1},
  {<<"erlcloud">>,
   {git,"https://github.com/erlcloud/erlcloud.git",
-       {ref,"b70efdcdbac1f8723ae920b1731d512dd8eb9618"}},
+       {ref,"b4adace81f337f019be427d742b6f0f936833840"}},
   0},
  {<<"fqc">>,
   {git,"https://github.com/project-fifo/fqc.git",
