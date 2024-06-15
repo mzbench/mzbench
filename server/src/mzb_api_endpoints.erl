@@ -65,8 +65,8 @@ handle(<<"GET">>, <<"/github_auth">>, _, Req) ->
     Req2 =
         case mzb_api_auth:auth_connection(undefined, "github", Code) of
             {ok, Ref, _UserInfo} ->
-                cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), Ref,
-                    [{http_only, true}], Req);
+                cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), Ref, Req,
+                    #{http_only => true});
             {error, Reason} ->
                 lager:error("Authentication error: ~p", [Reason]),
                 Req
@@ -106,8 +106,8 @@ handle(<<"POST">>, <<"/auth">>, _, Req) ->
                           }}, Req), #{}};
                 {error, Reason} ->
 
-                    Req2 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), <<>>,
-                            [{http_only, true}, {max_age, 0}], Req),
+                    Req2 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), <<>>, Req,
+                            #{http_only => true, max_age => 0}),
                     ReplyReason =
                         case Reason of
                             user_not_found -> <<"User not found">>;
@@ -117,12 +117,12 @@ handle(<<"POST">>, <<"/auth">>, _, Req) ->
             end;
 
         _ ->
-            {ok, Code, Req2} = cowboy_req:body(Req),
+            {ok, Code, Req2} = read_body(Req, <<>>),
 
             case mzb_api_auth:auth_connection(undefined, binary_to_list(Type), Code) of
                 {ok, Ref, UserInfo} ->
-                    Req3 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), Ref,
-                            [{http_only, true}], Req2),
+                    Req3 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), Ref, Req2
+                            #{http_only => true}),
                     {ok, reply_json(200,
                             #{res => <<"ok">>,
                               user_info => #{
@@ -141,8 +141,8 @@ handle(<<"POST">>, <<"/sign-out">>, _, Req) ->
     Cookies = cowboy_req:parse_cookies(Req),
     Ref = proplists:get_value(mzb_api_auth:cookie_name(), Cookies, undefined),
     mzb_api_auth:sign_out_connection(Ref),
-    Req2 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), <<>>,
-                            [{http_only, true}, {max_age, 0}], Req),
+    Req2 = cowboy_req:set_resp_cookie(mzb_api_auth:cookie_name(), <<>>, Req,
+                            #{http_only => true, max_age => 0}),
     {ok, reply_json(200, #{}, Req2), #{}};
 
 handle(<<"POST">>, <<"/typecheck">>, _, Req) ->
@@ -685,3 +685,9 @@ format_typecheck_reason(I) when is_integer(I) ->
 format_typecheck_reason(F) when is_float(F) ->
     float_to_list(F);
 format_typecheck_reason(L) when is_list(L) -> L.
+
+read_body(Req0, Acc) ->
+    case cowboy_req:read_body(Req0) of
+        {ok, Data, Req} -> {ok, << Acc/binary, Data/binary >>, Req};
+        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
+    end.
