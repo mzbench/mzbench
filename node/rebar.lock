@@ -22,7 +22,7 @@
   0},
  {<<"luerl">>,
   {git,"https://github.com/rvirding/luerl.git",
-       {ref,"8ef173e03d1b1e35883651164d34afb9ecf1acba"}},
+       {ref,"0abf38418e94967fd8699f5e26b9c900c1724f8a"}},
   0},
  {<<"mzbench_language">>,{rsync,"../common_apps/mzbench_language/"},0},
  {<<"mzbench_utils">>,{rsync,"../common_apps/mzbench_utils/"},0},
