@@ -36,7 +36,6 @@ clean:
 
 .make/compilation-up-to-date: $(SOURCES) rebar.config
 	$(REBAR) as pedantic compile
-	make -C _build/default/deps/jiffy
 	mkdir -p .make && touch $@
 
 -include ../../lib/dialyzer.mk
