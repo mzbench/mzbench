@@ -111,7 +111,7 @@ terminate(_Reason, _Req, #state{ref = Ref}) ->
 websocket_handle({text, Msg}, Req, State) ->
     case dispatch_request(jiffy:decode(Msg, [return_maps]), State) of
         {reply, Reply, NewState} ->
-            JsonReply = jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8]),
+            JsonReply = unicode:characters_to_binary(jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8])),
             {reply, {text, JsonReply}, Req, NewState};
         {ok, NewState} ->
             {ok, Req, NewState}
@@ -123,7 +123,7 @@ websocket_handle(_Data, Req, State) ->
 websocket_info(Message, Req, State) ->
     case dispatch_info(Message, State) of
         {reply, Reply, NewState} ->
-            JsonReply = jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8]),
+            JsonReply = unicode:characters_to_binary(jiffy:encode(mzb_string:str_to_bstr(Reply), [force_utf8])),
             {reply, {text, JsonReply}, Req, NewState};
         {ok, NewState} ->
             {ok, Req, NewState};
@@ -378,7 +378,7 @@ dispatch_request(#{<<"cmd">> := <<"get_finals">>} = Cmd, State = #state{}) ->
         <<"kind">> := Kind,
         <<"x_env">> := XEnv} = Cmd,
     Self = self(),
-    spawn(fun() -> get_finals(Self, StreamId, BenchIds, MetricName, Kind, XEnv) end),
+    mzb_spawn:spawn(fun() -> get_finals(Self, StreamId, BenchIds, MetricName, Kind, XEnv) end),
     {ok, State};
 
 dispatch_request(#{<<"cmd">> := <<"start_streaming_metric">>} = Cmd, State = #state{}) ->
@@ -484,9 +484,9 @@ apply_update(Fun) ->
             Str =
                 case Exception of
                     {ReasonAtom, ReasonStr} when is_atom(ReasonAtom) -> ReasonStr;
-                    _ -> io_lib:format("~p", [Exception])
+                    _ -> mzb_string:format("~p", [Exception])
                 end,
-            mzb_api_firehose:notify(danger, mzb_string:format("~s", [Str]))
+            mzb_api_firehose:notify(danger, mzb_string:format("~ts", [Str]))
     end.
 
 disk_status() ->
@@ -515,13 +515,13 @@ add_stream(StreamId, BenchId, MetricName, StreamParams, #state{metric_streams = 
     SendMetricsFun = fun ({data, Values}) -> Self ! {metric_value, StreamId, Values};
                          (batch_end)      -> Self ! {metric_batch_end, StreamId}
                      end,
-    Ref = erlang:spawn_monitor(fun() -> stream_metric(BenchId, MetricName, StreamParams, SendMetricsFun) end),
+    Ref = mzb_spawn:spawn_monitor(fun() -> stream_metric(BenchId, MetricName, StreamParams, SendMetricsFun) end),
     State#state{metric_streams = maps:put(StreamId, Ref, Streams)}.
 
 add_log_stream(BenchId, StreamId, #state{log_streams = Streams} = State) ->
     lager:debug("Starting streaming logs of the benchmark #~p, stream #~p", [BenchId, StreamId]),
     Pid = self(),
-    Ref = erlang:spawn_monitor(fun() -> stream_log(BenchId, StreamId, Pid) end),
+    Ref = mzb_spawn:spawn_monitor(fun() -> stream_log(BenchId, StreamId, Pid) end),
     State#state{log_streams = maps:put(StreamId, Ref, Streams)}.
 
 remove_stream(StreamId, Streams) ->
@@ -657,7 +657,7 @@ get_finals(Pid, StreamId, BenchIds, MetricName, Kind, XEnv) ->
       lists:zip(lists:reverse(lists:seq(1, length(Sorted))),
           lists:map(fun ({_, B}) -> {B, B, B} end, Sorted));
       true -> aggregate(Sorted) end,
-    Values = lists:foldl(fun({X, {Min, Avg, Max}}, Acc) -> [io_lib:format("~p\t~p\t~p\t~p~n", [X, Avg, Min, Max]) |Acc] end, [], Aggregated),
+    Values = lists:foldl(fun({X, {Min, Avg, Max}}, Acc) -> [mzb_string:format("~p\t~p\t~p\t~p~n", [X, Avg, Min, Max]) |Acc] end, [], Aggregated),
     Pid ! {metric_value, StreamId, Values},
     Pid ! {metric_batch_end, StreamId}.
 
@@ -941,7 +941,7 @@ stream_metric(Id, Metric, StreamParams, SendFun) ->
     try
         PollTimeout = application:get_env(mzbench_api, bench_poll_timeout, undefined),
         perform_streaming(Id, FileReader, SendFun, StreamParams#stream_parameters{metric_report_interval_sec = ReportIntervalMs div 1000}, PollTimeout),
-        lager:debug("Streamer for #~b ~s has finished", [Id, Metric])
+        lager:debug("Streamer for #~b ~ts has finished", [Id, Metric])
     after
         FileReader(close)
     end.
@@ -1057,14 +1057,14 @@ perform_subsampling(SubsamplingInterval, LastSentValueTimestamp, PreviousSumForM
 
             case LastRetainedTime of
                 undefined -> {ValueTimestamp, 0, 0, undefined, undefined, [
-                        io_lib:format("~p\t~p\t~p\t~p~n",
+                        mzb_string:format("~p\t~p\t~p\t~p~n",
                             [ValueTimestamp, Value, NewMinValue, NewMaxValue]) | Acc]};
                 Timestamp ->
                     Interval = ValueTimestamp - Timestamp,
                     case Interval < SubsamplingInterval of
                         true -> {LastRetainedTime, SumForMean + Value, NumValuesForMean + 1, NewMinValue, NewMaxValue, Acc};
                         false -> {ValueTimestamp, 0, 0, undefined, undefined,
-                                    [io_lib:format("~p\t~p\t~p\t~p~n",
+                                    [mzb_string:format("~p\t~p\t~p\t~p~n",
                                         [ValueTimestamp, (SumForMean + Value)/(NumValuesForMean + 1), NewMinValue, NewMaxValue]) | Acc]}
                     end
             end

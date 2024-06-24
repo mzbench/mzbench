@@ -59,6 +59,8 @@ if server_functions:
     doc_acc += """
   mzbench clean
   mzbench start_server [--config=<config>]
+  mzbench debug_server [--config=<config>]
+  mzbench remsh_server
   mzbench stop_server
   mzbench restart_server [--config=<config>]
   mzbench run_local <script> [--env=<name=value>...]
@@ -208,10 +210,10 @@ def require(executable):
 NODE_PROJECTS = [dirname + "/../node"]
 SERVER_PROJECTS = [dirname + "/../server"]
 CHECK_PROJECTS = NODE_PROJECTS + SERVER_PROJECTS + \
-    [dirname + '/../common_apps/mzbench_language',
-     dirname + '/../common_apps/mzbench_utils',
-     dirname + '/../examples',
-     dirname + '/../acceptance_tests/invalid_scripts']
+                 [dirname + '/../common_apps/mzbench_language',
+                  dirname + '/../common_apps/mzbench_utils',
+                  dirname + '/../examples',
+                  dirname + '/../acceptance_tests/invalid_scripts']
 
 def execute_make(projects, target):
     for subproject in projects:
@@ -232,28 +234,54 @@ def clean():
 def is_server_started():
     with util.silent_stdout():
         try:
-            return util.check_output([server_rel_dir + "bin/mzbench_api","rpcterms", "mzb_api_server", "ensure_started"]).strip() == "ok"
+            return util.check_output([server_rel_dir + "bin/mzbench_api","rpc", "mzb_api_server", "ensure_started"]).strip() == "ok"
         except subprocess.CalledProcessError:
             return False
 
 def print_server_config():
-    print(util.check_output([server_rel_dir + "bin/mzbench_api","rpcterms", "mzb_api_server", "config_info"]))
+    print("Config:\n")
+    my_env = os.environ.copy()
+    my_env['USE_NODETOOL'] = 'true'
+    print(util.check_output([server_rel_dir + "bin/mzbench_api","rpc", "mzb_api_server", "config_info"], env=my_env))
 
 def ensure_server_started(attempts):
     if attempts <= 0:
-       print
-       return False
+        print
+        return False
     if not is_server_started():
-       time.sleep(1)
-       sys.stdout.write(".")
-       sys.stdout.flush()
-       return ensure_server_started(attempts - 1)
+        time.sleep(1)
+        sys.stdout.write(".")
+        sys.stdout.flush()
+        return ensure_server_started(attempts - 1)
     print
     return True
 
 #=================================================================================================
 # API server startup and stop
 #=================================================================================================
+def remsh_server():
+    start_environ = os.environ
+    subprocess.check_call([server_rel_dir + 'bin/mzbench_api', 'remote_console'], env=start_environ)
+
+def debug_server(config):
+
+    if server_autorebuild:
+        require('escript')
+        execute_make(SERVER_PROJECTS, 'generate')
+    try:
+        start_environ = os.environ
+        start_environ['CODE_LOADING_MODE'] = 'interactive'
+        if 'ORIG_PATH' not in start_environ:
+            start_environ['ORIG_PATH'] = start_environ['PATH']
+        if config is not None:
+            start_environ['MZBENCH_CONFIG_FILE'] = os.path.abspath(config)
+        subprocess.check_call(['rm', '-rf', server_rel_dir + '../../../../log'])
+        subprocess.check_call([server_rel_dir + 'bin/mzbench_api', 'console'], env=start_environ)
+    except subprocess.CalledProcessError as e:
+        print("Failed to execute server debug command")
+        sys.exit(e.returncode)
+
+
 def start_server(config):
 
     if server_autorebuild:
@@ -272,7 +300,7 @@ def start_server(config):
             start_environ['ORIG_PATH'] = start_environ['PATH']
         if config is not None:
             start_environ['MZBENCH_CONFIG_FILE'] = os.path.abspath(config)
-        subprocess.check_call([server_rel_dir + 'bin/mzbench_api', 'start'], env=start_environ)
+        subprocess.check_call([server_rel_dir + 'bin/mzbench_api', 'daemon'], env=start_environ)
     except subprocess.CalledProcessError as e:
         print("Failed to execute server start command")
         sys.exit(e.returncode)
@@ -554,13 +582,13 @@ def run_or_validate(script, env, validate):
 
     pa = []
     ebin_dirs = (glob.glob(os.getcwd() + "/deps/*/ebin") +
-        glob.glob(os.getcwd() + "/apps/*/ebin") +
-        glob.glob(os.getcwd() + "/_build/default/deps/*/ebin"))
+                 glob.glob(os.getcwd() + "/apps/*/ebin") +
+                 glob.glob(os.getcwd() + "/_build/default/deps/*/ebin"))
     for p in ebin_dirs:
         pa += ["--pa", p]
     cmd = [os.path.join(escript_path, escript_name), script, '--pa', os.getcwd() + "/ebin"] + pa
 
-    for k, v in env.iteritems():
+    for k, v in env.items():
         cmd.append('--env')
         cmd.append(k + '=' + v)
 
@@ -604,7 +632,7 @@ def add_worker(version, tarball):
     name, extension = os.path.splitext(os.path.basename(tarball))
     worker_name = name.replace("_worker", "")
     shutil.copyfile(tarball, mzbench_installation + "cache/"
-        + worker_name + "-" + version + extension)
+                    + worker_name + "-" + version + extension)
     print("Worker " + worker_name + " copied to MZBench installation")
 
 def new_worker(template, name):
@@ -626,7 +654,7 @@ def new_worker(template, name):
 
             if template_name in filename:
                 os.rename(os.path.join(dirpath, filename),
-                    os.path.join(dirpath, filename.replace(template_name, worker_name)))
+                          os.path.join(dirpath, filename.replace(template_name, worker_name)))
 
     print('new worker ' + worker_name + ' has been created\n')
 
@@ -683,12 +711,12 @@ def augment_args(args):
 
     if args['--deallocate_after_bench'] not in [None, 'true', 'false']:
         print("invalid value for --deallocate_after_bench: {0}".format(
-                args['--deallocate_after_bench']))
+            args['--deallocate_after_bench']))
         sys.exit(4)
 
     if args['--provision_nodes'] not in [None, 'true', 'false']:
         print("invalid value for --provision_nodes: {0}".format(
-                args['--provision_nodes']))
+            args['--provision_nodes']))
         sys.exit(4)
 
     if args['--provision_workers'] not in [None, 'true', 'false']:
@@ -721,7 +749,7 @@ def main():
     augment_args(args)
 
     known_commands = [k for k in args
-        if not k.startswith('-') and not k.startswith('<')]
+                      if not k.startswith('-') and not k.startswith('<')]
 
     for cmd in known_commands:
         if args[cmd]:

@@ -72,6 +72,7 @@ declare_metric(Group, Title, Name, Type, Opts) ->
             ]}
         ]).
 
+declare_metrics([]) -> ok;
 declare_metrics(Groups) ->
     case mzb_metrics_cache:check_cached_declare(Groups) of
         true -> ok;
@@ -176,7 +177,7 @@ handle_cast({declare_metrics, Groups}, #s{metric_groups = OldGroups} = State) ->
             {noreply, State#s{metric_groups = NewGroups}}
     catch
         error:Error ->
-            system_log:error("Metrics declaration error: ~s", [mzb_script_metrics:format_error(Error)]),
+            system_log:error("Metrics declaration error: ~ts", [mzb_script_metrics:format_error(Error)]),
             {noreply, State}
     end;
 
@@ -267,10 +268,13 @@ evaluate_derived_metrics(#s{metric_groups = MetricGroups} = State) ->
             undefined -> ok; % nothing was calculated
             Val -> global_set(Name, gauge, Val)
         catch
-            _:Reason:ST -> system_log:error("Failed to evaluate derived metrics:~nWorker: ~p~nFunction: ~p~nReason: ~p~nStacktrace: ~p~n", [Worker, Resolver, Reason, ST])
+            _:Reason:ST ->
+                system_log:error("Failed to evaluate derived metrics:~nWorker: ~p~nFunction: ~p~nReason: ~p~nStacktrace: ~p~n",
+                    [Worker, Resolver, Reason, ST]
+                )
         end
     end, DerivedMetrics),
-    system_log:debug("[ metrics ] Current metrics values:~n~s", [format_global_metrics()]),
+    system_log:debug("[ metrics ] Current metrics values:~n~ts", [format_global_metrics()]),
     NewState.
 
 check_dynamic_deadlock(#s{} = State) ->
@@ -289,13 +293,13 @@ check_dynamic_deadlock(#s{} = State) ->
 check_assertions(TimePeriod, #s{asserts = Asserts, assert_accuracy_ms = AccuracyMs, env = Env} = State) ->
     system_log:info("[ metrics ] CHECK ASSERTIONS:"),
     NewAsserts = mzbl_asserts:update_state(TimePeriod, Asserts, Env),
-    system_log:info("Current assertions:~n~s", [mzbl_asserts:format_state(NewAsserts)]),
+    system_log:info("Current assertions:~n~ts", [mzbl_asserts:format_state(NewAsserts)]),
 
     FailedAsserts = mzbl_asserts:get_failed(_Finished = false, AccuracyMs, NewAsserts),
     case FailedAsserts of
         [] -> ok;
         _  ->
-            system_log:error("Interrupting benchmark because of failed asserts:~n~s", [string:join([Str|| {_, Str} <- FailedAsserts], "\n")]),
+            system_log:error("Interrupting benchmark because of failed asserts:~n~ts", [string:join([Str|| {_, Str} <- FailedAsserts], "\n")]),
             mzb_director:notify({assertions_failed, FailedAsserts})
     end,
     State#s{asserts = NewAsserts}.
@@ -315,7 +319,7 @@ check_signals(#s{nodes = Nodes} = State) ->
     GroupedSignals = groupby(lists:flatten(RawSignals)),
     Signals = [{N, lists:max(Counts)} || {N, Counts} <- GroupedSignals],
     _ = [signal_to_metric(N, Value) || {N, Value} <- Signals],
-    system_log:info("List of currently registered signals:~n~s", [format_signals_count(Signals)]),
+    system_log:info("List of currently registered signals:~n~ts", [format_signals_count(Signals)]),
     State.
 
 notify_metrics_subscribers(#s{metrics_subscribers = Subscribers} = State) ->
@@ -338,7 +342,7 @@ format_global_metrics() ->
     Metrics = global_metrics(),
     Lines = lists:map(
         fun({Name, _Type, Value}) ->
-            io_lib:format("~s = ~p", [Name, Value])
+            mzb_string:format("~ts = ~p", [Name, Value])
         end,
         Metrics),
     string:join(Lines, "\n").
@@ -346,7 +350,7 @@ format_global_metrics() ->
 format_signals_count(Signals) ->
     Lines = lists:map(
         fun({Name, Count}) ->
-            io_lib:format("~s = ~b", [Name, Count])
+            mzb_string:format("~ts = ~b", [Name, Count])
         end,
         Signals),
     string:join(Lines, "\n").

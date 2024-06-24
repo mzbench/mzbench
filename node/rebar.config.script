@@ -1,0 +1,6 @@
+io:format("Code paths: ~n"),
+lists:foreach(fun(Path) ->
+    io:format("\t~s~n", [ Path ])
+end, code:get_path()),
+
+CONFIG.

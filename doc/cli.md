@@ -56,6 +56,19 @@ Optional params:
 `--config <config_file>`
 :   Path to the [server config](deployment.md#configuration) file.
 
+### debug_server
+
+```bash
+$ ./bin/mzbench debug_server
+```
+
+Start server in console.
+
+Optional params:
+
+`--config <config_file>`
+:   Path to the [server config](deployment.md#configuration) file.
+
 
 ## Benchmark Control
 

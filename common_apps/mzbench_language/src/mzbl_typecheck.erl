@@ -285,7 +285,7 @@ add_location(_, X) -> X.
 format_error({X, is_not, Y}) ->
     mzb_string:format("~p is not ~p", [X, Y]);
 format_error({neither, Reason1, Reason2}) ->
-    mzb_string:format("~s and ~s", [format_error(Reason1), format_error(Reason2)]);
+    mzb_string:format("~ts and ~ts", [format_error(Reason1), format_error(Reason2)]);
 format_error(Str) when is_list(Str) ->
     Str;
 format_error(Term) ->

@@ -9,12 +9,12 @@ validate(#operation{name = Name, args = [Args]}) when Name == pre_hook; Name == 
 validate(#operation{name=exec, args=[Target, Cmd]}) ->
     TargetErr = case Target of
         T when T == all; T == director -> [];
-        _ -> [mzb_string:format("Invalid hook target: '~s' (valid values are 'director' or 'all')", [Target])]
+        _ -> [mzb_string:format("Invalid hook target: '~ts' (valid values are 'director' or 'all')", [Target])]
     end,
 
     CmdErr = case Cmd of
         C when is_list(C) -> [];
-        _ -> [mzb_string:format("Invalid exec command target: '~s' (should be string)", [Cmd])]
+        _ -> [mzb_string:format("Invalid exec command target: '~ts' (should be string)", [Cmd])]
     end,
 
     TargetErr ++ CmdErr;

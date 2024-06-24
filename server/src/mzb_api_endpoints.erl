@@ -10,7 +10,7 @@ init(Req, _Opts) ->
         lager:debug("REQUEST: ~p", [Req]),
         Path = cowboy_req:path(Req),
         Method = cowboy_req:method(Req),
-        lager:info("[ ~s ] ~s", [Method, Path]),
+        lager:info("[ ~ts ] ~ts", [Method, Path]),
         UserInfo = authorize(Method, Path, Req),
         handle(Method, Path, UserInfo, Req)
     catch
@@ -41,7 +41,7 @@ init(Req, _Opts) ->
             {ok, Req2, #{}};
 
         _:E:ST ->
-            Description = io_lib:format("Server Internal Error: ~p~n~nReq: ~p~n~nStacktrace: ~p", [E, Req, ST]),
+            Description = mzb_string:format("Server Internal Error: ~p~n~nReq: ~p~n~nStacktrace: ~p", [E, Req, ST]),
             Req2 = reply_error(500, <<"internal_error">>, Description, Req),
             lager:error(Description),
             {ok, Req2, #{}}
@@ -243,7 +243,7 @@ handle(<<"GET">>, <<"/userlog">>, _UserInfo, Req) ->
 handle(<<"GET">>, <<"/data">>, _UserInfo, Req) ->
     with_bench_id(Req, fun(Id) ->
         #{config:= Config, metrics:= Metrics} =
-            fun WaitMetricsCreations() ->
+            (fun WaitMetricsCreations() ->
                 #{status:= S} = Status = mzb_api_server:status(Id),
                 case lists:member(S, [running, stopped, complete, crashed, zombie]) of
                     true -> Status;
@@ -251,7 +251,7 @@ handle(<<"GET">>, <<"/data">>, _UserInfo, Req) ->
                         timer:sleep(1000),
                         WaitMetricsCreations()
                 end
-            end (),
+            end)(),
         MetricNames = mzb_api_metrics:extract_metric_names(Metrics),
         Filenames = [{N, mzb_api_bench:metrics_file(N, Config)} || N <- MetricNames],
         {ok, stream_metrics_from_files(Filenames, Id, Req), #{}}
@@ -279,7 +279,7 @@ handle(<<"GET">>, <<"/clusters_info">>, _UserInfo, Req) ->
             fun ({state, S}) -> {state, erlang:atom_to_binary(S, latin1)};
                 ({provider, P}) -> {provider, erlang:atom_to_binary(P, latin1)};
                 ({hosts, Hosts}) -> {hosts, [erlang:list_to_binary(H) || H <- Hosts]};
-                ({reason, Reason}) -> {reason, erlang:iolist_to_binary(io_lib:format("~p", [Reason]))};
+                ({reason, Reason}) -> {reason, erlang:iolist_to_binary(mzb_string:format("~p", [Reason]))};
                 ({K, V}) -> {K, V}
             end, D)
         end,
@@ -365,7 +365,7 @@ handle(<<"GET">>, <<"/remove_tags">>, _UserInfo, Req) ->
 
 handle(Method, Path, UserInfo, Req) ->
     lager:error("Unknown request from ~p: ~p ~p~n~p", [maps:get(login, UserInfo), Method, Path, Req]),
-    erlang:error({not_found, io_lib:format("Wrong endpoint: ~p ~p", [Method, Path])}).
+    erlang:error({not_found, mzb_string:format("Wrong endpoint: ~p ~p", [Method, Path])}).
 
 with_bench_id(Req, Action) ->
     Id2 =
@@ -496,7 +496,7 @@ check_nodes(Nodes) when is_list(Nodes) -> {true, [binary_to_list(N) || N <- Node
 
 iso_8601_fmt(Seconds) ->
     {{Year,Month,Day},{Hour,Min,Sec}} = calendar:now_to_universal_time({Seconds div 1000000, Seconds rem 1000000, 0}),
-    io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0BZ",
+    mzb_string:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0BZ",
         [Year, Month, Day, Hour, Min, Sec]).
 
 binary_to_bool(<<"true">>) -> true;
@@ -553,7 +553,7 @@ parse_start_params(Req) ->
                                     BinaryToValueFun(Value)
                                 catch
                                     _:_ ->
-                                        erlang:error({badarg, io_lib:format("Invalid value \"~s\" for ~s", [Value, ParamName])})
+                                        erlang:error({badarg, mzb_string:format("Invalid value \"~ts\" for ~ts", [Value, ParamName])})
                                 end;
                             [] -> DefaultValue
                         end;
@@ -566,7 +566,7 @@ parse_start_params(Req) ->
                                     ListOfBinariesToValueFun(L)
                                 catch
                                     _:_ ->
-                                        erlang:error({badarg, io_lib:format("Invalid value \"~p\" for ~s", [L, ParamName])})
+                                        erlang:error({badarg, mzb_string:format("Invalid value \"~p\" for ~ts", [L, ParamName])})
                                 end
                         end
                 end

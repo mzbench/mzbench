@@ -121,7 +121,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 send_direct_warning(F, A, #state{socket = Socket, formatter = Formatter, format_config = FormatConfig, colors = Colors}) ->
-    Str = io_lib:format(F, A),
+    Str = mzb_string:format(F, A),
     NewMsg = lager_msg:new(Str, warning, [{pid, self()}], []),
     _ = gen_tcp:send(Socket, Formatter:format(NewMsg, FormatConfig, Colors)),
     ok.
